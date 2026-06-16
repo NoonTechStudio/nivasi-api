@@ -20,22 +20,29 @@ import subscriptionRoutes from './routes/subscription.routes';
 
 const app = express();
 
-app.use(helmet());
 const corsOptions = {
-  origin: [
-    'http://localhost:3001',
-    'http://localhost:3000',
-    'https://nivasi-commad-centre.vercel.app',
-    'https://nivasi-command-centre.vercel.app',
-    /\.vercel\.app$/,
-  ] as (string | RegExp)[],
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin) return callback(null, true);
+    const allowed = [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'https://nivasi-commad-centre.vercel.app',
+      'https://nivasi-command-centre.vercel.app',
+    ];
+    if (origin.endsWith('.vercel.app') || allowed.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, true); // allow all during development
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200,
 };
 
-app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
+app.use(helmet());
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 

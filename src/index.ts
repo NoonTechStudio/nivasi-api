@@ -26,7 +26,14 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const PORT = process.env.PORT || 3000;
+
+console.log('All env vars:', {
+  PORT: process.env.PORT,
+  NODE_ENV: process.env.NODE_ENV,
+  DATABASE_URL: process.env.DATABASE_URL ? 'SET' : 'NOT SET',
+  REDIS_URL: process.env.REDIS_URL ? 'SET' : 'NOT SET',
+});
 
 // This must be the FIRST thing after const app = express();
 app.use((req: any, res: any, next: any) => {
@@ -72,8 +79,8 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 // Step 6 — Start server
 const startServer = async () => {
   // Listen immediately so Railway's proxy can reach the server right away
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Nivasi API running on port ${PORT} [${env.NODE_ENV}]`);
+  app.listen(PORT as any, '0.0.0.0', () => {
+    console.log(`Server started on PORT ${PORT}`);
   });
 
   // DB connect in background — failure is logged but does not kill the server

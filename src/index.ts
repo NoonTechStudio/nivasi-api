@@ -1,5 +1,5 @@
-import './config/env'; // validate env vars first
-import express from 'express';
+import './config/env';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -19,35 +19,37 @@ import subAdminRoutes from './routes/subadmin.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin) return callback(null, true);
-    const allowed = [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'https://nivasi-commad-centre.vercel.app',
-      'https://nivasi-command-centre.vercel.app',
-    ];
-    if (origin.endsWith('.vercel.app') || allowed.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(null, true); // allow all during development
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 200,
-};
+// Step 1 — Manual CORS headers middleware FIRST
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
 
-app.options('*', cors(corsOptions));
-app.use(cors(corsOptions));
-app.use(helmet());
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  next();
+});
+
+// Step 2 — cors package
+app.use(cors({ origin: true, credentials: true }));
+
+// Step 3 — Body parsing
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(helmet());
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+// Step 4 — Health check (no auth needed)
+app.get('/', (_req: Request, res: Response) => res.json({ message: 'Nivasi API is running' }));
+app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
+// Step 5 — All routes
 app.use('/api/auth', authRoutes);
 app.use('/api/directory', directoryRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
@@ -59,31 +61,29 @@ app.use('/api/superadmin', superAdminRoutes);
 app.use('/api/subadmin', subAdminRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 
-app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
+app.use((_req: Request, res: Response) => res.status(404).json({ success: false, message: 'Route not found' }));
 
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err.stack);
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
-async function bootstrap() {
+// Step 6 — Start server
+const startServer = async () => {
   try {
     await prisma.$connect();
     console.log('[DB] Connected');
-  } catch (err) {
-    console.error('[DB] Failed to connect:', err);
+
+    // Redis connects automatically (lazyConnect: false); failures are non-fatal
+    redis.on('error', () => {});
+
+    app.listen(PORT, () => {
+      console.log(`Nivasi API running on port ${PORT} [${env.NODE_ENV}]`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
     process.exit(1);
   }
+};
 
-  // Redis connects automatically (lazyConnect: false); failures are non-fatal
-  redis.on('error', () => {});
-
-  app.listen(Number(env.PORT), () => {
-    console.log(`Nivasi API running on port ${env.PORT} [${env.NODE_ENV}]`);
-  });
-}
-
-bootstrap().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+startServer();

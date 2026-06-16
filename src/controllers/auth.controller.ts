@@ -10,13 +10,13 @@ import { ok, badRequest, unauthorized, serverError } from '../utils/response';
 const MAX_SESSIONS_PER_FLAT = 2;
 
 const sendOtpSchema = z.object({
-  phone: z.string().regex(/^[6-9]\d{9}$/, 'Invalid Indian mobile number'),
+  phone: z.string().min(10).max(15),
 });
 
 const verifyOtpSchema = z.object({
-  phone: z.string().regex(/^[6-9]\d{9}$/),
+  phone: z.string().min(10).max(15),
   otp: z.string().length(6),
-  device_id: z.string().min(1),
+  device_id: z.string().optional(),
 });
 
 const guardLoginSchema = z.object({
@@ -114,7 +114,7 @@ export async function handleVerifyOtp(req: Request, res: Response) {
   const sessionToken = signRefreshToken({ user_id: user.id });
 
   await prisma.session.create({
-    data: { userId: user.id, deviceId: device_id, sessionToken, lastActive: new Date() },
+    data: { userId: user.id, deviceId: device_id ?? 'web', sessionToken, lastActive: new Date() },
   });
 
   const token = signToken({

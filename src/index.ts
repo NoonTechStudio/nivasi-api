@@ -17,6 +17,14 @@ import superAdminRoutes from './routes/superadmin.routes';
 import subAdminRoutes from './routes/subadmin.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err.message);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 

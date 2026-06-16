@@ -71,20 +71,18 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
 // Step 6 — Start server
 const startServer = async () => {
-  try {
-    await prisma.$connect();
-    console.log('[DB] Connected');
+  // Listen immediately so Railway's proxy can reach the server right away
+  app.listen(PORT, () => {
+    console.log(`Nivasi API running on port ${PORT} [${env.NODE_ENV}]`);
+  });
 
-    // Redis connects automatically (lazyConnect: false); failures are non-fatal
-    redis.on('error', () => {});
+  // DB connect in background — failure is logged but does not kill the server
+  prisma.$connect()
+    .then(() => console.log('[DB] Connected'))
+    .catch((err: Error) => console.error('[DB] Connection failed:', err.message));
 
-    app.listen(PORT, () => {
-      console.log(`Nivasi API running on port ${PORT} [${env.NODE_ENV}]`);
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
-  }
+  // Redis non-fatal
+  redis.on('error', () => {});
 };
 
 startServer();

@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { env } from './config/env';
 import { prisma } from './config/db';
-import { redis } from './config/redis';
+import redis from './config/redis';
 
 import authRoutes from './routes/auth.routes';
 import directoryRoutes from './routes/directory.routes';
@@ -46,8 +46,17 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 async function bootstrap() {
-  await redis.connect();
-  await prisma.$connect();
+  try {
+    await prisma.$connect();
+    console.log('[DB] Connected');
+  } catch (err) {
+    console.error('[DB] Failed to connect:', err);
+    process.exit(1);
+  }
+
+  // Redis connects automatically (lazyConnect: false); failures are non-fatal
+  redis.on('error', () => {});
+
   app.listen(Number(env.PORT), () => {
     console.log(`Nivasi API running on port ${env.PORT} [${env.NODE_ENV}]`);
   });

@@ -87,7 +87,7 @@ export async function createFlat(req: Request, res: Response) {
   if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
 
   const flat = await prisma.flat.create({
-    data: { ...parsed.data, wingId: req.user.wing_id },
+    data: { ...parsed.data, wingId: req.user.wing_id } as any,
   });
   return created(res, flat, 'Flat created');
 }

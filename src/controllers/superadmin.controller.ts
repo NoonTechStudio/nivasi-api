@@ -81,7 +81,7 @@ const createSocietySchema = z.object({
 export async function createSociety(req: Request, res: Response) {
   const parsed = createSocietySchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
-  const newSociety = await prisma.society.create({ data: parsed.data });
+  const newSociety = await prisma.society.create({ data: parsed.data as any });
 
   const trialEnd = new Date();
   trialEnd.setDate(trialEnd.getDate() + 30);
@@ -291,7 +291,7 @@ export async function createFlatInWing(req: Request, res: Response) {
   const dup = await prisma.flat.findFirst({ where: { wingId, number: parsed.data.number } });
   if (dup) return badRequest(res, `Flat ${parsed.data.number} already exists in this wing`);
 
-  const flat = await prisma.flat.create({ data: { ...parsed.data, wingId } });
+  const flat = await prisma.flat.create({ data: { ...parsed.data, wingId } as any });
   return created(res, flat);
 }
 

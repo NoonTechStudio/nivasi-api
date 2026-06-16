@@ -1,6 +1,5 @@
 import './config/env';
 import express, { Request, Response, NextFunction } from 'express';
-import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { env } from './config/env';
@@ -21,23 +20,17 @@ import subscriptionRoutes from './routes/subscription.routes';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Step 1 — Manual CORS headers middleware FIRST
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const origin = req.headers.origin || '*';
-  res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With');
-
+// This must be the FIRST thing after const app = express();
+app.use((req: any, res: any, next: any) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', '*');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.sendStatus(200);
   }
   next();
 });
-
-// Step 2 — cors package
-app.use(cors({ origin: true, credentials: true }));
 
 // Step 3 — Body parsing
 app.use(express.json({ limit: '10mb' }));

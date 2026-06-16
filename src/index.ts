@@ -21,7 +21,21 @@ import subscriptionRoutes from './routes/subscription.routes';
 const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: '*' }));
+const corsOptions = {
+  origin: [
+    'http://localhost:3001',
+    'http://localhost:3000',
+    'https://nivasi-commad-centre.vercel.app',
+    'https://nivasi-command-centre.vercel.app',
+    /\.vercel\.app$/,
+  ] as (string | RegExp)[],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 

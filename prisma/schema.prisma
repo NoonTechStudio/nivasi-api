@@ -1,0 +1,284 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Society {
+  id                 String    @id @default(cuid())
+  name               String
+  address            String
+  city               String
+  state              String    @default("Gujarat")
+  pinCode            String?
+  latitude           Float?
+  longitude          Float?
+  mapAddress         String?
+  subscriptionStatus String    @default("ACTIVE")
+  planType           String    @default("STARTER")
+  monthlyAmount      Float     @default(499)
+  subscriptionStart  DateTime  @default(now())
+  subscriptionEnd    DateTime?
+  trialEndsAt        DateTime?
+  autoRenew          Boolean   @default(true)
+  notes              String?
+  subAdminId         String?
+  subAdmin           SubAdmin? @relation("SubAdminSocieties", fields: [subAdminId], references: [id])
+  createdAt          DateTime  @default(now())
+  wings              Wing[]
+  payments           SubscriptionPayment[]
+}
+
+model SubscriptionPayment {
+  id        String   @id @default(cuid())
+  societyId String
+  society   Society  @relation(fields: [societyId], references: [id])
+  amount    Float
+  month     Int
+  year      Int
+  paidAt    DateTime @default(now())
+  method    String   @default("UPI")
+  reference String?
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+model SubAdmin {
+  id           String       @id @default(cuid())
+  name         String
+  phone        String       @unique
+  email        String?
+  password     String
+  role         SubAdminRole @default(AREA_PARTNER)
+  region       String
+  regionType   String
+  parentId     String?
+  parent       SubAdmin?    @relation("SubAdminHierarchy", fields: [parentId], references: [id])
+  children     SubAdmin[]   @relation("SubAdminHierarchy")
+  societies    Society[]    @relation("SubAdminSocieties")
+  commissionPct Float       @default(0)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  lastLoginAt  DateTime?
+}
+
+enum SubAdminRole {
+  STATE_ADMIN
+  CITY_ADMIN
+  AREA_PARTNER
+  CUSTOM
+}
+
+model Wing {
+  id          String      @id @default(cuid())
+  name        String
+  societyId   String
+  isActive    Boolean     @default(true)
+  trialEndsAt DateTime?
+  society     Society     @relation(fields: [societyId], references: [id])
+  flats      Flat[]
+  users      User[]
+  notices    Notice[]
+  complaints Complaint[]
+  visitors   Visitor[]
+  createdAt  DateTime    @default(now())
+}
+
+model Flat {
+  id            String            @id @default(cuid())
+  number        String
+  floor         Int
+  sqftSize      Int?
+  familyMembers Int               @default(0)
+  wingId        String
+  wing          Wing              @relation(fields: [wingId], references: [id])
+  users         User[]
+  bills         MaintenanceBill[]
+  vehicles      Vehicle[]
+  createdAt     DateTime          @default(now())
+}
+
+model User {
+  id        String    @id @default(cuid())
+  name         String
+  phone        String        @unique
+  role          Role          @default(RESIDENT)
+  residentType  ResidentType?
+  leaseStart    DateTime?
+  leaseEnd      DateTime?
+  familyMembers Int           @default(1)
+  isPrimary     Boolean       @default(false)
+  guardPin      String?
+  upiId         String?
+  societyId     String?
+  wingId       String?
+  flatId       String?
+  wing         Wing?         @relation(fields: [wingId], references: [id])
+  flat         Flat?         @relation(fields: [flatId], references: [id])
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  sessions     Session[]
+}
+
+enum ResidentType {
+  OWNER
+  TENANT
+}
+
+enum Role {
+  SUPER_ADMIN
+  WING_ADMIN
+  RESIDENT
+  GUARD
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  deviceId     String
+  sessionToken String
+  lastActive   DateTime @default(now())
+  createdAt    DateTime @default(now())
+}
+
+model MaintenanceBill {
+  id          String       @id @default(cuid())
+  flatId      String
+  flat        Flat         @relation(fields: [flatId], references: [id])
+  wingId      String
+  amount      Float
+  month       Int
+  year        Int
+  dueDate     DateTime
+  status      BillStatus   @default(PENDING)
+  paidAt      DateTime?
+  paymentMode PaymentMode?
+  receiptUrl  String?
+  createdAt   DateTime     @default(now())
+
+  @@unique([flatId, month, year])
+}
+
+enum BillStatus {
+  PENDING
+  PAID
+  OVERDUE
+  PENDING_VERIFICATION
+}
+
+enum PaymentMode {
+  UPI
+  CASH
+  CHEQUE
+}
+
+model Notice {
+  id        String         @id @default(cuid())
+  wingId    String
+  wing      Wing           @relation(fields: [wingId], references: [id])
+  title     String
+  body      String?
+  category  NoticeCategory
+  audience  String         @default("ALL")
+  photoUrl  String?
+  createdAt DateTime       @default(now())
+  seenBy    NoticeSeen[]
+}
+
+enum NoticeCategory {
+  MEETING
+  WATER
+  EVENT
+  MAINTENANCE
+  OTHER
+}
+
+model NoticeSeen {
+  id       String   @id @default(cuid())
+  noticeId String
+  notice   Notice   @relation(fields: [noticeId], references: [id])
+  userId   String
+  seenAt   DateTime @default(now())
+
+  @@unique([noticeId, userId])
+}
+
+model Complaint {
+  id          String            @id @default(cuid())
+  wingId      String
+  wing        Wing              @relation(fields: [wingId], references: [id])
+  flatId      String
+  userId      String
+  category    ComplaintCategory
+  location    String
+  description String?
+  photoUrl    String?
+  status      ComplaintStatus   @default(OPEN)
+  assignedTo  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime          @default(now())
+}
+
+enum ComplaintCategory {
+  PLUMBING
+  ELECTRICAL
+  LIFT
+  CLEANING
+  SECURITY
+  OTHER
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+model Visitor {
+  id               String            @id @default(cuid())
+  wingId           String
+  wing             Wing              @relation(fields: [wingId], references: [id])
+  flatId           String
+  visitorName      String
+  photoUrl         String?
+  purpose          String?
+  deliveryHandling DeliveryHandling?
+  approvedBy       String?
+  status           VisitorStatus     @default(PENDING)
+  entryTime        DateTime?
+  exitTime         DateTime?
+  createdAt        DateTime          @default(now())
+}
+
+enum VisitorStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+enum DeliveryHandling {
+  CABIN_DROP
+  HELPER_DELIVERY
+  DIRECT_DELIVERY
+}
+
+model Vehicle {
+  id          String      @id @default(cuid())
+  flatId      String
+  flat        Flat        @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  wingId      String
+  type        VehicleType
+  plateNumber String
+  createdAt   DateTime    @default(now())
+}
+
+enum VehicleType {
+  BIKE
+  CAR
+  AUTO
+  OTHER
+}

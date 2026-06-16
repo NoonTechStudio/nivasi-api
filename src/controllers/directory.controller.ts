@@ -1,0 +1,358 @@
+import { Request, Response } from 'express';
+import { z } from 'zod';
+import { prisma } from '../config/db';
+import { ok, created, badRequest, notFound } from '../utils/response';
+
+const createFlatSchema = z.object({
+  number: z.string().min(1),
+  floor: z.number().int().min(0),
+});
+
+const addResidentSchema = z.object({
+  flatId: z.string().min(1, 'Flat is required'),
+  primaryResident: z.object({
+    name: z.string().min(1, 'Primary resident name is required'),
+    phone: z.string().regex(/^[6-9]\d{9}$/, 'Invalid primary mobile number'),
+  }),
+  secondResident: z.object({
+    name: z.string().min(1, 'Second resident name is required'),
+    phone: z.string().regex(/^[6-9]\d{9}$/, 'Invalid second mobile number'),
+  }).nullable().optional(),
+  familyMembers: z.number().int().min(1).max(8).default(1),
+  vehicles: z.array(z.object({
+    type: z.enum(['BIKE', 'CAR', 'AUTO', 'OTHER']),
+    plateNumber: z.string().min(1),
+  })).optional().default([]),
+});
+
+const addGuardSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  phone: z.string().regex(/^[6-9]\d{9}$/, 'Invalid mobile number'),
+  pin: z.string().length(4).regex(/^\d{4}$/, 'PIN must be 4 digits'),
+});
+
+export async function listFlats(req: Request, res: Response) {
+  const vacantOnly = req.query.vacant === 'true';
+
+  const flats = await prisma.flat.findMany({
+    where: {
+      wingId: req.user.wing_id,
+      ...(vacantOnly ? { users: { none: { isActive: true } } } : {}),
+    },
+    include: {
+      wing: { select: { id: true, name: true } },
+      vehicles: { select: { id: true, type: true, plateNumber: true } },
+      users: {
+        where: { isActive: true },
+        select: {
+          id: true, name: true, phone: true, role: true,
+          residentType: true, leaseStart: true, leaseEnd: true,
+        },
+      },
+    },
+    orderBy: [{ floor: 'asc' }, { number: 'asc' }],
+  });
+  return ok(res, flats);
+}
+
+export async function getFlatDetail(req: Request, res: Response) {
+  const flat = await prisma.flat.findFirst({
+    where: { id: req.params.id, wingId: req.user.wing_id },
+    select: { id: true, number: true, floor: true, familyMembers: true },
+  });
+  if (!flat) return notFound(res, 'Flat not found');
+
+  const [residents, vehicles, recentBills] = await Promise.all([
+    prisma.user.findMany({
+      where: { flatId: flat.id, isActive: true },
+      select: { id: true, name: true, phone: true, role: true, residentType: true },
+    }),
+    prisma.vehicle.findMany({
+      where: { flatId: flat.id },
+      select: { id: true, type: true, plateNumber: true },
+    }),
+    prisma.maintenanceBill.findMany({
+      where: { flatId: flat.id },
+      select: { id: true, month: true, year: true, amount: true, status: true },
+      orderBy: [{ year: 'desc' }, { month: 'desc' }],
+      take: 3,
+    }),
+  ]);
+
+  return ok(res, { flat, residents, vehicles, recentBills });
+}
+
+export async function createFlat(req: Request, res: Response) {
+  const parsed = createFlatSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+
+  const flat = await prisma.flat.create({
+    data: { ...parsed.data, wingId: req.user.wing_id },
+  });
+  return created(res, flat, 'Flat created');
+}
+
+export async function updateFlat(req: Request, res: Response) {
+  const flat = await prisma.flat.findFirst({ where: { id: req.params.id, wingId: req.user.wing_id } });
+  if (!flat) return notFound(res, 'Flat not found');
+
+  const updated = await prisma.flat.update({ where: { id: req.params.id }, data: req.body });
+  return ok(res, updated);
+}
+
+export async function addResident(req: Request, res: Response) {
+  const parsed = addResidentSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+
+  const { flatId, primaryResident, secondResident, familyMembers, vehicles } = parsed.data;
+
+  const flat = await prisma.flat.findFirst({ where: { id: flatId, wingId: req.user.wing_id } });
+  if (!flat) return notFound(res, 'Flat not found');
+
+  const wing = await prisma.wing.findUnique({ where: { id: req.user.wing_id } });
+  if (!wing) return notFound(res, 'Wing not found');
+
+  const currentCount = await prisma.user.count({ where: { flatId, role: 'RESIDENT', isActive: true } });
+  const adding = secondResident ? 2 : 1;
+  if (currentCount + adding > 2) {
+    return badRequest(res, `This flat already has ${currentCount} resident(s). Maximum 2 logins allowed per flat.`);
+  }
+
+  const primary = await prisma.user.upsert({
+    where: { phone: primaryResident.phone },
+    create: {
+      name: primaryResident.name,
+      phone: primaryResident.phone,
+      role: 'RESIDENT',
+      residentType: 'OWNER',
+      familyMembers,
+      societyId: wing.societyId,
+      wingId: req.user.wing_id,
+      flatId,
+    },
+    update: {
+      name: primaryResident.name,
+      residentType: 'OWNER',
+      familyMembers,
+      wingId: req.user.wing_id,
+      flatId,
+      isActive: true,
+    },
+  });
+
+  if (secondResident) {
+    await prisma.user.upsert({
+      where: { phone: secondResident.phone },
+      create: {
+        name: secondResident.name,
+        phone: secondResident.phone,
+        role: 'RESIDENT',
+        residentType: 'OWNER',
+        familyMembers,
+        societyId: wing.societyId,
+        wingId: req.user.wing_id,
+        flatId,
+      },
+      update: {
+        name: secondResident.name,
+        residentType: 'OWNER',
+        familyMembers,
+        wingId: req.user.wing_id,
+        flatId,
+        isActive: true,
+      },
+    });
+  }
+
+  console.log(`[addResident] Saving familyMembers=${familyMembers} to flat ${flatId}`);
+  await prisma.flat.update({ where: { id: flatId }, data: { familyMembers } });
+
+  if (vehicles && vehicles.length > 0) {
+    await prisma.vehicle.deleteMany({ where: { flatId } });
+    await prisma.vehicle.createMany({
+      data: vehicles.map((v) => ({
+        flatId,
+        wingId: req.user.wing_id,
+        type: v.type,
+        plateNumber: v.plateNumber,
+      })),
+    });
+  }
+
+  return created(res, { id: primary.id, name: primary.name }, 'Resident added');
+}
+
+export async function removeResident(req: Request, res: Response) {
+  const user = await prisma.user.findFirst({ where: { id: req.params.id, wingId: req.user.wing_id } });
+  if (!user) return notFound(res, 'Resident not found');
+
+  await prisma.user.update({ where: { id: req.params.id }, data: { isActive: false, flatId: null } });
+  return ok(res, null, 'Resident removed');
+}
+
+export async function getGuards(req: Request, res: Response) {
+  const [guards, wing] = await Promise.all([
+    prisma.user.findMany({
+      where: { wingId: req.user.wing_id, role: 'GUARD', isActive: true },
+      select: { id: true, name: true, phone: true, guardPin: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.wing.findUnique({
+      where: { id: req.user.wing_id },
+      select: { name: true },
+    }),
+  ]);
+  return ok(res, { guards, wingName: wing?.name ?? '' });
+}
+
+export async function addGuard(req: Request, res: Response) {
+  const parsed = addGuardSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+
+  const { name, phone, pin } = parsed.data;
+
+  const wing = await prisma.wing.findUnique({ where: { id: req.user.wing_id } });
+  if (!wing) return notFound(res, 'Wing not found');
+
+  // Prevent a non-guard phone number from being overwritten
+  const existing = await prisma.user.findUnique({ where: { phone } });
+  if (existing && existing.role !== 'GUARD') {
+    return badRequest(res, `Phone ${phone} is already registered to another user`);
+  }
+
+  const guard = await prisma.user.upsert({
+    where: { phone },
+    create: {
+      name, phone, role: 'GUARD',
+      guardPin: pin,
+      societyId: wing.societyId,
+      wingId: req.user.wing_id,
+    },
+    update: {
+      name, role: 'GUARD',
+      guardPin: pin,
+      wingId: req.user.wing_id,
+      isActive: true,
+    },
+  });
+
+  return created(res, { id: guard.id, name: guard.name }, 'Guard added');
+}
+
+export async function updateGuardPin(req: Request, res: Response) {
+  const { guardId } = req.params;
+  const { pin } = req.body;
+
+  if (!pin || !/^\d{4}$/.test(pin)) {
+    return badRequest(res, 'PIN must be exactly 4 digits');
+  }
+
+  const guard = await prisma.user.findFirst({
+    where: { id: guardId, wingId: req.user.wing_id, role: 'GUARD' },
+  });
+  if (!guard) return notFound(res, 'Guard not found');
+
+  await prisma.user.update({ where: { id: guardId }, data: { guardPin: pin } });
+  return ok(res, null, 'PIN updated successfully');
+}
+
+const updateResidentSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  phone: z.string().regex(/^[6-9]\d{9}$/, 'Invalid mobile number'),
+  familyMembers: z.number().int().min(1).max(8),
+});
+
+export async function updateResident(req: Request, res: Response) {
+  const parsed = updateResidentSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+
+  const { name, phone, familyMembers } = parsed.data;
+  const { userId } = req.params;
+
+  const user = await prisma.user.findFirst({
+    where: { id: userId, wingId: req.user.wing_id, isActive: true },
+  });
+  if (!user) return notFound(res, 'Resident not found');
+
+  await prisma.user.update({ where: { id: userId }, data: { name, phone } });
+
+  if (user.flatId) {
+    await prisma.flat.update({ where: { id: user.flatId }, data: { familyMembers } });
+  }
+
+  return ok(res, null, 'Resident updated');
+}
+
+const addVehicleSchema = z.object({
+  flatId: z.string().min(1),
+  type: z.enum(['BIKE', 'CAR', 'AUTO', 'OTHER']),
+  plateNumber: z.string().min(1, 'Plate number is required'),
+});
+
+export async function addVehicle(req: Request, res: Response) {
+  const parsed = addVehicleSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+
+  const { flatId, type, plateNumber } = parsed.data;
+
+  const flat = await prisma.flat.findFirst({ where: { id: flatId, wingId: req.user.wing_id } });
+  if (!flat) return notFound(res, 'Flat not found');
+
+  const vehicle = await prisma.vehicle.create({
+    data: { flatId, wingId: req.user.wing_id, type, plateNumber },
+  });
+  return created(res, vehicle, 'Vehicle added');
+}
+
+export async function deleteVehicle(req: Request, res: Response) {
+  const vehicle = await prisma.vehicle.findFirst({
+    where: { id: req.params.id, wingId: req.user.wing_id },
+  });
+  if (!vehicle) return notFound(res, 'Vehicle not found');
+
+  await prisma.vehicle.delete({ where: { id: req.params.id } });
+  return ok(res, null, 'Vehicle removed');
+}
+
+const addStaffSchema = z.object({
+  name: z.string().min(1),
+  phone: z.string().regex(/^[6-9]\d{9}$/),
+});
+
+export async function addStaff(req: Request, res: Response) {
+  const parsed = addStaffSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+
+  const { name, phone } = parsed.data;
+  const wing = await prisma.wing.findUnique({ where: { id: req.user.wing_id } });
+  if (!wing) return notFound(res, 'Wing not found');
+
+  const staff = await prisma.user.upsert({
+    where: { phone },
+    create: { name, phone, role: 'RESIDENT', societyId: wing.societyId, wingId: req.user.wing_id },
+    update: { name, isActive: true },
+  });
+
+  return created(res, staff, 'Staff added');
+}
+
+export async function getSecretaryProfile(req: Request, res: Response) {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.user_id },
+    select: { name: true, phone: true, upiId: true },
+  });
+  if (!user) return notFound(res, 'User not found');
+  return ok(res, user);
+}
+
+export async function updateSecretaryUpi(req: Request, res: Response) {
+  const { upiId } = req.body;
+  if (!upiId || typeof upiId !== 'string' || !upiId.includes('@')) {
+    return badRequest(res, 'Invalid UPI ID. Must contain @ symbol.');
+  }
+  await prisma.user.update({
+    where: { id: req.user.user_id },
+    data: { upiId: upiId.trim() },
+  });
+  return ok(res, null, 'UPI ID saved successfully');
+}

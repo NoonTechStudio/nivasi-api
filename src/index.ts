@@ -26,7 +26,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // This must be the FIRST thing after const app = express();
 app.use((req: any, res: any, next: any) => {
@@ -72,7 +72,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 // Step 6 — Start server
 const startServer = async () => {
   // Listen immediately so Railway's proxy can reach the server right away
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`Nivasi API running on port ${PORT} [${env.NODE_ENV}]`);
   });
 

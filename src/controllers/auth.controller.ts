@@ -15,7 +15,7 @@ const sendOtpSchema = z.object({
 
 const verifyOtpSchema = z.object({
   phone: z.string().min(10).max(15),
-  otp: z.string().length(6),
+  otp: z.string().min(4).max(8),
   device_id: z.string().optional(),
 });
 

@@ -1,42 +1,63 @@
-import axios from 'axios';
-import { redis } from '../config/redis';
-import { env } from '../config/env';
+import redis from '../config/redis';
 
-const OTP_TTL_SECONDS = 300; // 5 minutes
-const OTP_KEY_PREFIX = 'otp:';
+const DEV_KEY_VALUES = ['', 'placeholder', 'your_msg91_key'];
 
-function generateOtp(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+function isDevMode(): boolean {
+  return DEV_KEY_VALUES.includes(process.env.MSG91_API_KEY ?? '');
 }
 
-const DEV_OTP = '123456';
-
-export async function sendOtp(phone: string): Promise<void> {
-  if (!env.MSG91_API_KEY) {
-    // Dev bypass: store fixed OTP, skip MSG91 call
-    await redis.set(`${OTP_KEY_PREFIX}${phone}`, DEV_OTP, 'EX', OTP_TTL_SECONDS);
-    console.log(`[DEV] OTP for ${phone}: ${DEV_OTP}`);
-    return;
+export const sendOTP = async (phone: string): Promise<boolean> => {
+  if (isDevMode()) {
+    await redis.setex(`otp:${phone}`, 600, '123456');
+    console.log(`[OTP] Dev mode — OTP for ${phone}: 123456`);
+    return true;
   }
 
-  const otp = generateOtp();
-  await redis.set(`${OTP_KEY_PREFIX}${phone}`, otp, 'EX', OTP_TTL_SECONDS);
+  try {
+    const url = `https://control.msg91.com/api/v5/otp?template_id=${process.env.MSG91_TEMPLATE_ID}&mobile=91${phone}&authkey=${process.env.MSG91_API_KEY}&otp_length=6&otp_expiry=10`;
 
-  await axios.post(
-    'https://api.msg91.com/api/v5/otp',
-    {
-      template_id: env.MSG91_TEMPLATE_ID,
-      mobile: `91${phone}`,
-      authkey: env.MSG91_API_KEY,
-      otp,
-    },
-    { headers: { 'Content-Type': 'application/json' } },
-  );
-}
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-export async function verifyOtp(phone: string, otp: string): Promise<boolean> {
-  const stored = await redis.get(`${OTP_KEY_PREFIX}${phone}`);
-  if (!stored || stored !== otp) return false;
-  await redis.del(`${OTP_KEY_PREFIX}${phone}`);
-  return true;
-}
+    const data = await response.json() as { type: string; message?: string };
+    console.log('[OTP] MSG91 response:', JSON.stringify(data));
+
+    if (data.type === 'success') {
+      return true;
+    } else {
+      console.error('[OTP] MSG91 error:', data.message);
+      return false;
+    }
+  } catch (error: any) {
+    console.error('[OTP] Failed to send:', error.message);
+    return false;
+  }
+};
+
+export const verifyOTP = async (phone: string, otp: string): Promise<boolean> => {
+  if (isDevMode()) {
+    return otp === '123456';
+  }
+
+  try {
+    const url = `https://control.msg91.com/api/v5/otp/verify?mobile=91${phone}&otp=${otp}&authkey=${process.env.MSG91_API_KEY}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const data = await response.json() as { type: string; message?: string };
+    console.log('[OTP] Verify response:', JSON.stringify(data));
+
+    return data.type === 'success';
+  } catch (error: any) {
+    console.error('[OTP] Verify failed:', error.message);
+    return false;
+  }
+};
+
+// Lowercase aliases kept for compatibility
+export { sendOTP as sendOtp, verifyOTP as verifyOtp };

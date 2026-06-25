@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../config/db';
 import { redis } from '../config/redis';
 import { env } from '../config/env';
-import { sendOtp, verifyOtp } from '../services/otp.service';
+import { sendOTP, verifyOTP } from '../services/otp.service';
 import { signToken, signRefreshToken, verifyToken } from '../utils/jwt';
 import { ok, badRequest, unauthorized, serverError } from '../utils/response';
 
@@ -66,7 +66,7 @@ export async function handleSendOtp(req: Request, res: Response) {
   }
 
   try {
-    await sendOtp(phone);
+    await sendOTP(phone);
     return ok(res, null, 'OTP sent successfully');
   } catch (err) {
     console.error('OTP send error:', err);
@@ -103,22 +103,14 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
 
     console.log('[verifyOtp] useDevOtp:', useDevOtp);
 
-    if (useDevOtp && cleanOtp !== '123456') {
+    console.log('[verifyOtp] Verifying OTP...');
+    const verified = await verifyOTP(cleanPhone, cleanOtp);
+    if (!verified) {
       clearTimeout(timeout);
-      return res.status(400).json({ success: false, message: 'Invalid OTP. Use 123456 for demo.' });
-    }
-
-    if (!useDevOtp) {
-      console.log('[verifyOtp] Checking Redis...');
-      const storedOtp = await Promise.race([
-        redis.get(`otp:${cleanPhone}`),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Redis timeout')), 5000)),
-      ]);
-      if (!storedOtp || storedOtp !== cleanOtp) {
-        clearTimeout(timeout);
-        return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
-      }
-      await redis.del(`otp:${cleanPhone}`);
+      return res.status(400).json({
+        success: false,
+        message: useDevOtp ? 'Invalid OTP. Use 123456 for demo.' : 'Invalid or expired OTP',
+      });
     }
 
     console.log('[verifyOtp] Finding user in DB...');

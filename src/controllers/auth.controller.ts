@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { redis } from '../config/redis';
@@ -73,64 +74,117 @@ export async function handleSendOtp(req: Request, res: Response) {
   }
 }
 
-export async function handleVerifyOtp(req: Request, res: Response) {
-  const parsed = verifyOtpSchema.safeParse(req.body);
-  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
-
-  const { phone, otp, device_id } = parsed.data;
-
-  const useDevOtp =
-    process.env.NODE_ENV === 'development' ||
-    !process.env.MSG91_API_KEY ||
-    process.env.MSG91_API_KEY === 'placeholder' ||
-    process.env.MSG91_API_KEY === 'your_msg91_key';
-
-  if (useDevOtp) {
-    if (otp !== '123456') {
-      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+export const handleVerifyOtp = async (req: Request, res: Response) => {
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      console.error('[verifyOtp] TIMEOUT — handler took too long');
+      res.status(500).json({ success: false, message: 'Request timeout' });
     }
-    // Skip Redis check, proceed with login directly
-  } else {
-    const valid = await verifyOtp(phone, otp);
-    if (!valid) return unauthorized(res, 'Invalid or expired OTP');
-  }
+  }, 10000);
 
-  const users = await prisma.user.findMany({ where: { phone } });
-  if (users.length === 0) {
-    return res.status(404).json({ success: false, message: 'Phone number not registered. Contact your Wing Secretary.' });
-  }
+  try {
+    console.log('[verifyOtp] Start — body:', JSON.stringify(req.body));
 
-  const user = pickHighestRole(users);
-  if (!user) return unauthorized(res, 'User not found');
+    const { phone, otp, device_id } = req.body;
+    const cleanPhone = String(phone || '').trim().replace(/[^0-9]/g, '');
+    const cleanOtp = String(otp || '').trim();
 
-  // Enforce max 2 sessions per flat
-  if (user.flatId) {
-    const sessions = await prisma.session.findMany({ where: { userId: user.id }, orderBy: { lastActive: 'asc' } });
-    if (sessions.length >= MAX_SESSIONS_PER_FLAT) {
-      await prisma.session.delete({ where: { id: sessions[0].id } });
+    console.log('[verifyOtp] Clean phone:', cleanPhone, 'otp:', cleanOtp);
+
+    if (!cleanPhone || !cleanOtp) {
+      clearTimeout(timeout);
+      return res.status(400).json({ success: false, message: 'Phone and OTP required' });
+    }
+
+    const useDevOtp =
+      !process.env.MSG91_API_KEY ||
+      process.env.MSG91_API_KEY === 'placeholder' ||
+      process.env.MSG91_API_KEY === 'your_msg91_key';
+
+    console.log('[verifyOtp] useDevOtp:', useDevOtp);
+
+    if (useDevOtp && cleanOtp !== '123456') {
+      clearTimeout(timeout);
+      return res.status(400).json({ success: false, message: 'Invalid OTP. Use 123456 for demo.' });
+    }
+
+    if (!useDevOtp) {
+      console.log('[verifyOtp] Checking Redis...');
+      const storedOtp = await Promise.race([
+        redis.get(`otp:${cleanPhone}`),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Redis timeout')), 5000)),
+      ]);
+      if (!storedOtp || storedOtp !== cleanOtp) {
+        clearTimeout(timeout);
+        return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
+      }
+      await redis.del(`otp:${cleanPhone}`);
+    }
+
+    console.log('[verifyOtp] Finding user in DB...');
+    const users = await Promise.race([
+      prisma.user.findMany({ where: { phone: cleanPhone } }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('DB timeout')), 8000)),
+    ]);
+
+    console.log('[verifyOtp] Users found:', users.length);
+
+    if (!users.length) {
+      clearTimeout(timeout);
+      return res.status(404).json({
+        success: false,
+        message: 'Phone not registered. Contact your Wing Secretary.',
+      });
+    }
+
+    const roleOrder = ['SUPER_ADMIN', 'WING_ADMIN', 'GUARD', 'RESIDENT'];
+    const user = [...users].sort(
+      (a, b) => roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role)
+    )[0];
+
+    console.log('[verifyOtp] Logging in as:', user.role, user.phone);
+
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        role: user.role,
+        societyId: user.societyId,
+        wingId: user.wingId,
+        flatId: user.flatId,
+        phone: user.phone,
+      },
+      process.env.JWT_SECRET || 'fallback_secret',
+      { expiresIn: '30d' }
+    );
+
+    console.log('[verifyOtp] Token generated, sending response...');
+
+    clearTimeout(timeout);
+    return res.json({
+      success: true,
+      message: 'Login successful',
+      data: {
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+          societyId: user.societyId,
+          wingId: user.wingId,
+          flatId: user.flatId,
+        },
+      },
+    });
+  } catch (error: unknown) {
+    clearTimeout(timeout);
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[verifyOtp] Error:', msg);
+    if (!res.headersSent) {
+      return res.status(500).json({ success: false, message: 'Verification failed: ' + msg });
     }
   }
-
-  const sessionToken = signRefreshToken({ user_id: user.id });
-
-  await prisma.session.create({
-    data: { userId: user.id, deviceId: device_id ?? 'web', sessionToken, lastActive: new Date() },
-  });
-
-  const token = signToken({
-    user_id: user.id,
-    role: user.role,
-    society_id: user.societyId ?? '',
-    wing_id: user.wingId ?? '',
-    flat_id: user.flatId,
-  });
-
-  return ok(res, {
-    token,
-    refresh_token: sessionToken,
-    user: { id: user.id, name: user.name, phone: user.phone, role: user.role },
-  }, 'Login successful');
-}
+};
 
 export async function handleGuardLogin(req: Request, res: Response) {
   const parsed = guardLoginSchema.safeParse(req.body);

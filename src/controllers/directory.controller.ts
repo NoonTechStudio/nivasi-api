@@ -134,6 +134,8 @@ export async function addResident(req: Request, res: Response) {
     return badRequest(res, `This flat already has ${currentCount} resident(s). Maximum 2 logins allowed per flat.`);
   }
 
+  console.log(`[addResident] flatId:${flatId} primary:${primaryResident.phone} wingId:${req.user.wing_id}`);
+
   const primary = await prisma.user.upsert({
     where: { phone: primaryResident.phone },
     create: {
@@ -142,14 +144,17 @@ export async function addResident(req: Request, res: Response) {
       role: 'RESIDENT',
       residentType: 'OWNER',
       familyMembers,
+      isPrimary: true,
       societyId: wing.societyId,
       wingId: req.user.wing_id,
       flatId,
+      isActive: true,
     },
     update: {
       name: primaryResident.name,
       residentType: 'OWNER',
       familyMembers,
+      isPrimary: true,
       wingId: req.user.wing_id,
       flatId,
       isActive: true,
@@ -165,14 +170,17 @@ export async function addResident(req: Request, res: Response) {
         role: 'RESIDENT',
         residentType: 'OWNER',
         familyMembers,
+        isPrimary: false,
         societyId: wing.societyId,
         wingId: req.user.wing_id,
         flatId,
+        isActive: true,
       },
       update: {
         name: secondResident.name,
         residentType: 'OWNER',
         familyMembers,
+        isPrimary: false,
         wingId: req.user.wing_id,
         flatId,
         isActive: true,
@@ -180,7 +188,7 @@ export async function addResident(req: Request, res: Response) {
     });
   }
 
-  console.log(`[addResident] Saving familyMembers=${familyMembers} to flat ${flatId}`);
+  console.log(`[addResident] Success — resident ${primary.name} linked to flat ${flat.number} (${flatId})`);
   await prisma.flat.update({ where: { id: flatId }, data: { familyMembers } });
 
   if (vehicles && vehicles.length > 0) {

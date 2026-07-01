@@ -98,28 +98,54 @@ export async function generateBills(req: Request, res: Response) {
   if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
 
   const { amount, month, year, due_date } = parsed.data;
+  const wingId = req.user.wing_id;
+
+  console.log('[generateBills] wingId:', wingId, 'month:', month, 'year:', year, 'amount:', amount);
+
+  if (!wingId) {
+    return res.status(400).json({ success: false, message: 'Wing not assigned' });
+  }
+
+  // Reject if bills already exist for this month/year
+  const existingCount = await prisma.maintenanceBill.count({ where: { wingId, month, year } });
+  if (existingCount > 0) {
+    return res.status(400).json({
+      success: false,
+      message: `Bills already generated for this month. ${existingCount} bills exist.`,
+    });
+  }
 
   const [allFlats, occupiedFlats] = await Promise.all([
-    prisma.flat.findMany({ where: { wingId: req.user.wing_id }, select: { id: true } }),
+    prisma.flat.findMany({ where: { wingId }, select: { id: true } }),
     prisma.flat.findMany({
-      where: { wingId: req.user.wing_id, users: { some: { role: 'RESIDENT', isActive: true } } },
-      select: { id: true },
+      where: {
+        wingId,
+        OR: [
+          { users: { some: { role: 'RESIDENT', isActive: true } } },
+          { familyMembers: { gt: 0 } },
+        ],
+      },
+      select: { id: true, number: true, floor: true, familyMembers: true },
     }),
   ]);
 
+  console.log('[generateBills] All flats:', allFlats.length, 'Occupied:', occupiedFlats.length);
+  console.log('[generateBills] Occupied flat numbers:', occupiedFlats.map((f) => f.number).join(', '));
+
   if (allFlats.length === 0) return badRequest(res, 'No flats found in wing');
   if (occupiedFlats.length === 0) {
-    return badRequest(res, 'No occupied flats found. Add residents before generating bills.');
+    return res.status(400).json({
+      success: false,
+      message: `No occupied flats found. Total flats in wing: ${allFlats.length}. Add residents or set family count before generating bills.`,
+    });
   }
 
   const skipped = allFlats.length - occupiedFlats.length;
 
-  const bills = await prisma.$transaction(
+  const bills = await Promise.all(
     occupiedFlats.map((flat) =>
-      prisma.maintenanceBill.upsert({
-        where: { flatId_month_year: { flatId: flat.id, month, year } },
-        create: { flatId: flat.id, wingId: req.user.wing_id, amount, month, year, dueDate: new Date(due_date) },
-        update: {},
+      prisma.maintenanceBill.create({
+        data: { flatId: flat.id, wingId, amount, month, year, dueDate: new Date(due_date), status: 'PENDING' },
       }),
     ),
   );

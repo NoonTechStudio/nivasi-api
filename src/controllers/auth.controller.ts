@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../config/db';
 import { redis } from '../config/redis';
 import { env } from '../config/env';
+import { verifyOTP } from '../services/otp.service';
 import { signToken, signRefreshToken, verifyToken } from '../utils/jwt';
 import { ok, badRequest, unauthorized, serverError } from '../utils/response';
 
@@ -58,27 +59,29 @@ export async function handleSendOtp(req: Request, res: Response) {
 export const handleVerifyOtp = async (req: Request, res: Response) => {
   const timeout = setTimeout(() => {
     if (!res.headersSent) {
-      console.error('[verifyOtp] TIMEOUT — handler took too long');
       res.status(500).json({ success: false, message: 'Request timeout' });
     }
-  }, 10000);
+  }, 15000);
 
   try {
-    console.log('[verifyOtp] Start — body:', JSON.stringify(req.body));
+    console.log('[verifyOtp] Body received:', JSON.stringify(req.body));
 
-    const { phone, otp, device_id } = req.body;
+    const { phone, otp } = req.body;
     const cleanPhone = String(phone || '').trim().replace(/[^0-9]/g, '');
     const cleanOtp = String(otp || '').trim();
 
-    console.log('[verifyOtp] Clean phone:', cleanPhone, 'otp:', cleanOtp);
+    console.log('[verifyOtp] Clean phone:', cleanPhone, 'Clean OTP:', cleanOtp);
 
     if (!cleanPhone || !cleanOtp) {
       clearTimeout(timeout);
-      return res.status(400).json({ success: false, message: 'Phone and OTP required' });
+      return res.status(400).json({ success: false, message: 'Phone and OTP are required' });
     }
 
-    console.log('[verifyOtp] Verifying OTP...');
-    if (cleanOtp !== DEMO_OTP) {
+    // Verify OTP
+    const isValid = await verifyOTP(cleanPhone, cleanOtp);
+    console.log('[verifyOtp] OTP valid:', isValid);
+
+    if (!isValid) {
       clearTimeout(timeout);
       return res.status(400).json({
         success: false,
@@ -86,11 +89,11 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
       });
     }
 
-    console.log('[verifyOtp] Finding user in DB...');
-    const users = await Promise.race([
-      prisma.user.findMany({ where: { phone: cleanPhone } }),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('DB timeout')), 8000)),
-    ]);
+    // Find user
+    console.log('[verifyOtp] Finding user with phone:', cleanPhone);
+    const users = await prisma.user.findMany({
+      where: { phone: cleanPhone },
+    });
 
     console.log('[verifyOtp] Users found:', users.length);
 
@@ -102,6 +105,7 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
       });
     }
 
+    // Pick highest role
     const roleOrder = ['SUPER_ADMIN', 'WING_ADMIN', 'GUARD', 'RESIDENT'];
     const user = [...users].sort(
       (a, b) => roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role)
@@ -109,6 +113,7 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
 
     console.log('[verifyOtp] Logging in as:', user.role, user.phone);
 
+    // Generate JWT
     const token = jwt.sign(
       {
         userId: user.id,
@@ -121,8 +126,6 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
       process.env.JWT_SECRET || 'fallback_secret',
       { expiresIn: '30d' }
     );
-
-    console.log('[verifyOtp] Token generated, sending response...');
 
     clearTimeout(timeout);
     return res.json({
@@ -141,12 +144,14 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
         },
       },
     });
-  } catch (error: unknown) {
+  } catch (error: any) {
     clearTimeout(timeout);
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[verifyOtp] Error:', msg);
+    console.error('[verifyOtp] Error:', error.message);
     if (!res.headersSent) {
-      return res.status(500).json({ success: false, message: 'Verification failed: ' + msg });
+      return res.status(500).json({
+        success: false,
+        message: 'Verification failed: ' + error.message,
+      });
     }
   }
 };

@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { prisma } from '../config/db';
 import { redis } from '../config/redis';
 import { env } from '../config/env';
-import { sendOTP, verifyOTP } from '../services/otp.service';
 import { signToken, signRefreshToken, verifyToken } from '../utils/jwt';
 import { ok, badRequest, unauthorized, serverError } from '../utils/response';
 
@@ -39,39 +38,21 @@ function pickHighestRole<T extends { role: string; isActive: boolean }>(users: T
   );
 }
 
+const DEMO_OTP = '403090';
+
 export async function handleSendOtp(req: Request, res: Response) {
   const parsed = sendOtpSchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
 
   const { phone } = parsed.data;
+  const cleanPhone = phone.trim().replace(/[^0-9]/g, '');
 
-  const useDevOtp =
-    process.env.NODE_ENV === 'development' ||
-    !process.env.MSG91_AUTH_KEY ||
-    process.env.MSG91_AUTH_KEY === 'placeholder' ||
-    process.env.MSG91_AUTH_KEY === 'your_msg91_key';
-
-  if (useDevOtp) {
-    await redis.setex(`otp:${phone}`, 600, '123456');
-    return res.json({
-      success: true,
-      message: 'OTP sent successfully',
-      ...(process.env.NODE_ENV === 'development' && { otp: '123456' }),
-    });
-  }
-
-  const user = await prisma.user.findFirst({ where: { phone }, orderBy: [{ role: 'asc' }] });
-  if (!user || !user.isActive) {
-    return badRequest(res, 'Phone number not registered. Contact your Wing Secretary.');
-  }
-
-  try {
-    await sendOTP(phone);
-    return ok(res, null, 'OTP sent successfully');
-  } catch (err) {
-    console.error('OTP send error:', err);
-    return serverError(res, 'Failed to send OTP');
-  }
+  await redis.setex(`otp:${cleanPhone}`, 600, DEMO_OTP);
+  console.log(`[OTP] Demo mode — OTP for ${cleanPhone}: ${DEMO_OTP}`);
+  return res.json({
+    success: true,
+    message: 'OTP sent successfully',
+  });
 }
 
 export const handleVerifyOtp = async (req: Request, res: Response) => {
@@ -96,20 +77,12 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Phone and OTP required' });
     }
 
-    const useDevOtp =
-      !process.env.MSG91_AUTH_KEY ||
-      process.env.MSG91_AUTH_KEY === 'placeholder' ||
-      process.env.MSG91_AUTH_KEY === 'your_msg91_key';
-
-    console.log('[verifyOtp] useDevOtp:', useDevOtp);
-
     console.log('[verifyOtp] Verifying OTP...');
-    const verified = await verifyOTP(cleanPhone, cleanOtp);
-    if (!verified) {
+    if (cleanOtp !== DEMO_OTP) {
       clearTimeout(timeout);
       return res.status(400).json({
         success: false,
-        message: useDevOtp ? 'Invalid OTP. Use 123456 for demo.' : 'Invalid or expired OTP',
+        message: 'Invalid OTP. Please try again.',
       });
     }
 

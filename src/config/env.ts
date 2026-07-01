@@ -12,7 +12,7 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('30d'),
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('90d'),
   // Third-party services — optional until configured
-  MSG91_API_KEY: z.string().default(''),
+  MSG91_AUTH_KEY: z.string().default(''),
   MSG91_SENDER_ID: z.string().default('NIVASI'),
   MSG91_TEMPLATE_ID: z.string().default(''),
   FIREBASE_PROJECT_ID: z.string().default(''),

@@ -3,7 +3,7 @@ import redis from '../config/redis';
 const DEV_KEY_VALUES = ['', 'placeholder', 'your_msg91_key'];
 
 function isDevMode(): boolean {
-  return DEV_KEY_VALUES.includes(process.env.MSG91_API_KEY ?? '');
+  return DEV_KEY_VALUES.includes(process.env.MSG91_AUTH_KEY ?? '');
 }
 
 export const sendOTP = async (phone: string): Promise<boolean> => {
@@ -14,11 +14,19 @@ export const sendOTP = async (phone: string): Promise<boolean> => {
   }
 
   try {
-    const url = `https://control.msg91.com/api/v5/otp?template_id=${process.env.MSG91_TEMPLATE_ID}&mobile=91${phone}&authkey=${process.env.MSG91_API_KEY}&otp_length=6&otp_expiry=10`;
+    const authKey = process.env.MSG91_AUTH_KEY!;
+    const url = `https://control.msg91.com/api/v5/otp?otp_length=6&otp_expiry=10`;
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'authkey': authKey,
+      },
+      body: JSON.stringify({
+        template_id: process.env.MSG91_TEMPLATE_ID,
+        mobile: `91${phone}`,
+      }),
     });
 
     const data = await response.json() as { type: string; message?: string };
@@ -42,11 +50,15 @@ export const verifyOTP = async (phone: string, otp: string): Promise<boolean> =>
   }
 
   try {
-    const url = `https://control.msg91.com/api/v5/otp/verify?mobile=91${phone}&otp=${otp}&authkey=${process.env.MSG91_API_KEY}`;
+    const authKey = process.env.MSG91_AUTH_KEY!;
+    const url = `https://control.msg91.com/api/v5/otp/verify?mobile=91${phone}&otp=${otp}`;
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'authkey': authKey,
+      },
     });
 
     const data = await response.json() as { type: string; message?: string };

@@ -47,9 +47,9 @@ export async function handleSendOtp(req: Request, res: Response) {
 
   const useDevOtp =
     process.env.NODE_ENV === 'development' ||
-    !process.env.MSG91_API_KEY ||
-    process.env.MSG91_API_KEY === 'placeholder' ||
-    process.env.MSG91_API_KEY === 'your_msg91_key';
+    !process.env.MSG91_AUTH_KEY ||
+    process.env.MSG91_AUTH_KEY === 'placeholder' ||
+    process.env.MSG91_AUTH_KEY === 'your_msg91_key';
 
   if (useDevOtp) {
     await redis.setex(`otp:${phone}`, 600, '123456');
@@ -97,9 +97,9 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
     }
 
     const useDevOtp =
-      !process.env.MSG91_API_KEY ||
-      process.env.MSG91_API_KEY === 'placeholder' ||
-      process.env.MSG91_API_KEY === 'your_msg91_key';
+      !process.env.MSG91_AUTH_KEY ||
+      process.env.MSG91_AUTH_KEY === 'placeholder' ||
+      process.env.MSG91_AUTH_KEY === 'your_msg91_key';
 
     console.log('[verifyOtp] useDevOtp:', useDevOtp);
 

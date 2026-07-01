@@ -32,27 +32,43 @@ const addGuardSchema = z.object({
 });
 
 export async function listFlats(req: Request, res: Response) {
-  const vacantOnly = req.query.vacant === 'true';
+  try {
+    const wingId = req.user.wing_id;
+    console.log('[listFlats] User wing_id:', wingId, 'role:', req.user.role);
 
-  const flats = await prisma.flat.findMany({
-    where: {
-      wingId: req.user.wing_id,
-      ...(vacantOnly ? { users: { none: { isActive: true } } } : {}),
-    },
-    include: {
-      wing: { select: { id: true, name: true } },
-      vehicles: { select: { id: true, type: true, plateNumber: true } },
-      users: {
-        where: { isActive: true },
-        select: {
-          id: true, name: true, phone: true, role: true,
-          residentType: true, leaseStart: true, leaseEnd: true,
+    if (!wingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Wing not assigned. Contact Super Admin.',
+      });
+    }
+
+    const vacantOnly = req.query.vacant === 'true';
+
+    const flats = await prisma.flat.findMany({
+      where: {
+        wingId,
+        ...(vacantOnly ? { users: { none: { isActive: true } } } : {}),
+      },
+      include: {
+        wing: { select: { id: true, name: true } },
+        vehicles: { select: { id: true, type: true, plateNumber: true } },
+        users: {
+          where: { isActive: true },
+          select: {
+            id: true, name: true, phone: true, role: true,
+            residentType: true, leaseStart: true, leaseEnd: true,
+          },
         },
       },
-    },
-    orderBy: [{ floor: 'asc' }, { number: 'asc' }],
-  });
-  return ok(res, flats);
+      orderBy: [{ floor: 'asc' }, { number: 'asc' }],
+    });
+
+    return ok(res, flats);
+  } catch (err: any) {
+    console.error('[listFlats] Error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
 }
 
 export async function getFlatDetail(req: Request, res: Response) {

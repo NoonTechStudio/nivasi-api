@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { redis } from '../config/redis';
@@ -113,19 +112,14 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
 
     console.log('[verifyOtp] Logging in as:', user.role, user.phone);
 
-    // Generate JWT
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        role: user.role,
-        societyId: user.societyId,
-        wingId: user.wingId,
-        flatId: user.flatId,
-        phone: user.phone,
-      },
-      process.env.JWT_SECRET || 'fallback_secret',
-      { expiresIn: '30d' }
-    );
+    // Generate JWT using signToken so the payload matches JwtPayload (snake_case)
+    const token = signToken({
+      user_id: user.id,
+      role: user.role,
+      society_id: user.societyId ?? '',
+      wing_id: user.wingId ?? '',
+      flat_id: user.flatId ?? null,
+    });
 
     clearTimeout(timeout);
     return res.json({

@@ -18,31 +18,46 @@ const VALID_STATUSES = ['PENDING', 'PAID', 'OVERDUE', 'PENDING_VERIFICATION'] as
 type ValidStatus = typeof VALID_STATUSES[number];
 
 export async function listBills(req: Request, res: Response) {
-  const month = req.query.month ? parseInt(req.query.month as string, 10) : undefined;
-  const year = req.query.year ? parseInt(req.query.year as string, 10) : undefined;
-  const statusParam = req.query.status as string | undefined;
-  const statusFilter = statusParam && (VALID_STATUSES as readonly string[]).includes(statusParam)
-    ? (statusParam as ValidStatus)
-    : undefined;
+  try {
+    const wingId = req.user.wing_id;
+    console.log('[listBills] User wing_id:', wingId, 'role:', req.user.role);
 
-  const baseWhere =
-    req.user.role === 'RESIDENT'
-      ? { wingId: req.user.wing_id, flatId: req.user.flat_id ?? undefined }
-      : { wingId: req.user.wing_id };
+    if (!wingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Wing not assigned.',
+      });
+    }
 
-  const where = {
-    ...baseWhere,
-    ...(month !== undefined && !isNaN(month) ? { month } : {}),
-    ...(year !== undefined && !isNaN(year) ? { year } : {}),
-    ...(statusFilter ? { status: statusFilter } : {}),
-  };
+    const month = req.query.month ? parseInt(req.query.month as string, 10) : undefined;
+    const year = req.query.year ? parseInt(req.query.year as string, 10) : undefined;
+    const statusParam = req.query.status as string | undefined;
+    const statusFilter = statusParam && (VALID_STATUSES as readonly string[]).includes(statusParam)
+      ? (statusParam as ValidStatus)
+      : undefined;
 
-  const bills = await prisma.maintenanceBill.findMany({
-    where,
-    include: { flat: { select: { number: true, floor: true } } },
-    orderBy: [{ year: 'desc' }, { month: 'desc' }],
-  });
-  return ok(res, bills);
+    const baseWhere =
+      req.user.role === 'RESIDENT'
+        ? { wingId, flatId: req.user.flat_id ?? undefined }
+        : { wingId };
+
+    const where = {
+      ...baseWhere,
+      ...(month !== undefined && !isNaN(month) ? { month } : {}),
+      ...(year !== undefined && !isNaN(year) ? { year } : {}),
+      ...(statusFilter ? { status: statusFilter } : {}),
+    };
+
+    const bills = await prisma.maintenanceBill.findMany({
+      where,
+      include: { flat: { select: { number: true, floor: true } } },
+      orderBy: [{ year: 'desc' }, { month: 'desc' }],
+    });
+    return ok(res, bills);
+  } catch (err: any) {
+    console.error('[listBills] Error:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
 }
 
 export async function getDistinctMonths(req: Request, res: Response) {

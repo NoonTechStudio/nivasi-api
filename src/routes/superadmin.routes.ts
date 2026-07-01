@@ -2,7 +2,7 @@ import { Router } from 'express';
 import {
   getStats,
   getSocieties, createSociety, updateSociety, deleteSociety,
-  createWing, getWingDetail,
+  createWing, getWingDetail, deleteWing,
   createFlatInWing,
   setWingSecretary,
   getWingResidents,
@@ -28,6 +28,7 @@ router.delete('/societies/:id', deleteSociety);
 // Wings
 router.post('/wings', createWing);
 router.get('/wings/:id', getWingDetail);
+router.delete('/wings/:wingId', deleteWing);
 router.post('/wings/:wingId/flats', createFlatInWing);
 router.post('/wings/:wingId/secretary', setWingSecretary);
 router.get('/wings/:wingId/residents', getWingResidents);

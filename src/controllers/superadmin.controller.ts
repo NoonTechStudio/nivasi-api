@@ -464,3 +464,51 @@ export async function removeResidentAdmin(req: Request, res: Response) {
   await prisma.user.update({ where: { id }, data: { isActive: false, flatId: null } });
   return ok(res, null, 'Resident removed');
 }
+
+// ─── Delete Wing ──────────────────────────────────────────────────────────────
+
+export async function deleteWing(req: Request, res: Response) {
+  const { wingId } = req.params;
+  try {
+    const wing = await prisma.wing.findUnique({ where: { id: wingId } });
+    if (!wing) return res.status(404).json({ success: false, message: 'Wing not found' });
+
+    const flats = await prisma.flat.findMany({ where: { wingId }, select: { id: true } });
+    const flatIds = flats.map((f) => f.id);
+
+    if (flatIds.length > 0) {
+      await prisma.maintenanceBill.deleteMany({ where: { flatId: { in: flatIds } } });
+      await prisma.vehicle.deleteMany({ where: { flatId: { in: flatIds } } });
+    }
+
+    const notices = await prisma.notice.findMany({ where: { wingId }, select: { id: true } });
+    if (notices.length > 0) {
+      await prisma.noticeSeen.deleteMany({ where: { noticeId: { in: notices.map((n) => n.id) } } });
+    }
+
+    await prisma.visitor.deleteMany({ where: { wingId } });
+    await prisma.complaint.deleteMany({ where: { wingId } });
+    await prisma.notice.deleteMany({ where: { wingId } });
+
+    await prisma.session.deleteMany({
+      where: { user: { wingId, role: { notIn: ['SUPER_ADMIN', 'GUARD'] } } },
+    });
+
+    await prisma.user.updateMany({
+      where: { wingId, role: { in: ['SUPER_ADMIN', 'GUARD'] } },
+      data: { wingId: null },
+    });
+
+    await prisma.user.deleteMany({
+      where: { wingId, role: { notIn: ['SUPER_ADMIN', 'GUARD'] } },
+    });
+
+    await prisma.flat.deleteMany({ where: { wingId } });
+    await prisma.wing.delete({ where: { id: wingId } });
+
+    return res.json({ success: true, message: 'Wing deleted successfully' });
+  } catch (error: any) {
+    console.error('Delete wing error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}

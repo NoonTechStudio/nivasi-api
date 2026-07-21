@@ -1,23 +1,9 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db';
-import { redis } from '../config/redis';
-import { env } from '../config/env';
-import { verifyOTP } from '../services/otp.service';
-import { signToken, signRefreshToken, verifyToken } from '../utils/jwt';
-import { ok, badRequest, unauthorized, serverError } from '../utils/response';
-
-const MAX_SESSIONS_PER_FLAT = 2;
-
-const sendOtpSchema = z.object({
-  phone: z.string().min(10).max(15),
-});
-
-const verifyOtpSchema = z.object({
-  phone: z.string().min(10).max(15),
-  otp: z.string().min(4).max(8),
-  device_id: z.string().optional(),
-});
+import { sendOTP, verifyOTP } from '../services/otp.service';
+import { signToken, verifyToken } from '../utils/jwt';
+import { ok, badRequest, unauthorized } from '../utils/response';
 
 const guardLoginSchema = z.object({
   wing_code: z.string().min(1),
@@ -28,31 +14,27 @@ const refreshSchema = z.object({
   refresh_token: z.string().min(1),
 });
 
-const ROLE_ORDER = ['SUPER_ADMIN', 'WING_ADMIN', 'GUARD', 'RESIDENT'] as const;
-
-function pickHighestRole<T extends { role: string; isActive: boolean }>(users: T[]): T | null {
-  return (
-    users
-      .filter((u) => u.isActive)
-      .sort((a, b) => ROLE_ORDER.indexOf(a.role as typeof ROLE_ORDER[number]) - ROLE_ORDER.indexOf(b.role as typeof ROLE_ORDER[number]))[0] ?? null
-  );
-}
-
-const DEMO_OTP = '403090';
-
 export async function handleSendOtp(req: Request, res: Response) {
-  const parsed = sendOtpSchema.safeParse(req.body);
-  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+  try {
+    const { phone } = req.body;
+    const cleanPhone = String(phone || '').trim().replace(/[^0-9]/g, '');
 
-  const { phone } = parsed.data;
-  const cleanPhone = phone.trim().replace(/[^0-9]/g, '');
+    console.log('[sendOtp] Phone:', cleanPhone);
 
-  await redis.setex(`otp:${cleanPhone}`, 600, DEMO_OTP);
-  console.log(`[OTP] Demo mode — OTP for ${cleanPhone}: ${DEMO_OTP}`);
-  return res.json({
-    success: true,
-    message: 'OTP sent successfully',
-  });
+    if (!cleanPhone || cleanPhone.length < 10) {
+      return res.status(400).json({ success: false, message: 'Valid phone number required' });
+    }
+
+    await sendOTP(cleanPhone);
+
+    return res.json({
+      success: true,
+      message: 'OTP sent successfully',
+    });
+  } catch (error: any) {
+    console.error('[sendOtp] Error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to send OTP' });
+  }
 }
 
 export const handleVerifyOtp = async (req: Request, res: Response) => {

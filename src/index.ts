@@ -56,6 +56,7 @@ app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 // Step 4 — Health check (no auth needed)
 app.get('/', (_req: Request, res: Response) => res.json({ message: 'Nivasi API is running' }));
 app.get('/health', (_req: Request, res: Response) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+app.get('/api/health', (_req: Request, res: Response) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 // Step 5 — All routes
 app.use('/api/auth', authRoutes);

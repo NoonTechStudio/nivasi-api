@@ -84,6 +84,7 @@ model Wing {
   notices    Notice[]
   complaints Complaint[]
   visitors   Visitor[]
+  utilityServices UtilityService[]
   createdAt  DateTime    @default(now())
 }
 
@@ -121,6 +122,7 @@ model User {
   isActive     Boolean       @default(true)
   createdAt    DateTime      @default(now())
   sessions     Session[]
+  vaultDocuments VaultDocument[]
 }
 
 enum ResidentType {
@@ -280,5 +282,77 @@ enum VehicleType {
   BIKE
   CAR
   AUTO
+  OTHER
+}
+
+model UtilityService {
+  id               String              @id @default(cuid())
+  wingId           String
+  wing             Wing                @relation(fields: [wingId], references: [id])
+  category         UtilityCategory
+  name             String
+  assignedToName   String?
+  assignedToPhone  String?
+  frequency        UtilityFrequency    @default(MONTHLY)
+  scheduleDays     String[]            @default([])
+  estimatedCost    Float?
+  status           UtilityStatus       @default(ACTIVE)
+  notes            String?
+  createdAt        DateTime            @default(now())
+  logs             UtilityServiceLog[]
+}
+
+enum UtilityCategory {
+  WATER
+  DRAINAGE
+  GARDEN
+  ELECTRICITY
+  PARKING
+  OTHER
+}
+
+enum UtilityFrequency {
+  ONCE
+  WEEKLY
+  MONTHLY
+}
+
+enum UtilityStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+model UtilityServiceLog {
+  id               String          @id @default(cuid())
+  utilityServiceId String
+  utilityService   UtilityService  @relation(fields: [utilityServiceId], references: [id], onDelete: Cascade)
+  completedAt      DateTime        @default(now())
+  amountPaid       Float?
+  paymentMode      PaymentMode?
+  recordedBy       String?
+  createdAt        DateTime        @default(now())
+}
+
+model VaultDocument {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  docType            DocType
+  fileName           String
+  mimeType           String
+  cloudinaryPublicId String
+  resourceType       String
+  format             String?
+  notes              String?
+  createdAt          DateTime @default(now())
+}
+
+enum DocType {
+  AADHAAR
+  PAN
+  SALE_DEED
+  RENT_AGREEMENT
+  PROPERTY_TAX
   OTHER
 }

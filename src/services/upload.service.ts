@@ -15,3 +15,51 @@ export async function uploadImage(filePath: string, folder: string): Promise<str
 export async function deleteImage(publicId: string): Promise<void> {
   await cloudinary.uploader.destroy(publicId);
 }
+
+// ─── Private (signed-access) uploads — used for sensitive documents like the
+// Personal Document Vault. Files are stored with type:'private' so no
+// permanent public URL ever exists; a fresh short-lived signed URL must be
+// generated on every view/download request via getSignedDownloadUrl().
+
+export interface PrivateUploadResult {
+  publicId: string;
+  resourceType: string;
+  format: string | null;
+}
+
+export async function uploadPrivateBuffer(
+  buffer: Buffer,
+  folder: string,
+): Promise<PrivateUploadResult> {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder, type: 'private', resource_type: 'auto' },
+      (error, result) => {
+        if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'));
+        resolve({
+          publicId: result.public_id,
+          resourceType: result.resource_type,
+          format: result.format ?? null,
+        });
+      },
+    );
+    stream.end(buffer);
+  });
+}
+
+export function getSignedDownloadUrl(
+  publicId: string,
+  resourceType: string,
+  format: string | null,
+  expiresInSeconds = 300,
+): string {
+  return cloudinary.utils.private_download_url(publicId, format ?? undefined, {
+    resource_type: resourceType,
+    type: 'private',
+    expires_at: Math.floor(Date.now() / 1000) + expiresInSeconds,
+  });
+}
+
+export async function deletePrivateFile(publicId: string, resourceType: string): Promise<void> {
+  await cloudinary.uploader.destroy(publicId, { resource_type: resourceType, type: 'private' });
+}

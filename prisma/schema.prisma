@@ -85,6 +85,7 @@ model Wing {
   complaints Complaint[]
   visitors   Visitor[]
   utilityServices UtilityService[]
+  vendors    Vendor[]
   createdAt  DateTime    @default(now())
 }
 
@@ -355,4 +356,44 @@ enum DocType {
   RENT_AGREEMENT
   PROPERTY_TAX
   OTHER
+}
+
+model Vendor {
+  id        String        @id @default(cuid())
+  wingId    String
+  wing      Wing          @relation(fields: [wingId], references: [id])
+  category  VendorCategory
+  name      String
+  phone     String
+  notes     String?
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  jobs      VendorJob[]
+}
+
+enum VendorCategory {
+  PLUMBER
+  ELECTRICIAN
+  CLEANER
+  GARDENER
+  CONTRACTOR
+  OTHER
+}
+
+model VendorJob {
+  id           String        @id @default(cuid())
+  vendorId     String
+  vendor       Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  description  String
+  status       VendorJobStatus @default(ASSIGNED)
+  cost         Float?
+  paymentMode  PaymentMode?
+  assignedAt   DateTime      @default(now())
+  completedAt  DateTime?
+  createdAt    DateTime      @default(now())
+}
+
+enum VendorJobStatus {
+  ASSIGNED
+  COMPLETED
 }

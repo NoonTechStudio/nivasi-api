@@ -60,10 +60,7 @@ export async function uploadVaultDocument(req: Request, res: Response) {
     return created(res, doc, 'Document uploaded');
   } catch (err: any) {
     console.error('[uploadVaultDocument] Error:', err.message);
-    // TEMP: surfacing the real error to the client while we debug the Cloudinary
-    // integration going live for the first time. Revert to a generic message
-    // once uploads are confirmed working end-to-end.
-    return res.status(500).json({ success: false, message: `Upload failed: ${err.message}` });
+    return res.status(500).json({ success: false, message: 'Upload failed. Please try again.' });
   }
 }
 

@@ -18,6 +18,7 @@ import subAdminRoutes from './routes/subadmin.routes';
 import subscriptionRoutes from './routes/subscription.routes';
 import utilityRoutes from './routes/utility.routes';
 import vaultRoutes from './routes/vault.routes';
+import vendorRoutes from './routes/vendor.routes';
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err.message);
@@ -73,6 +74,7 @@ app.use('/api/subadmin', subAdminRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/utilities', utilityRoutes);
 app.use('/api/vault', vaultRoutes);
+app.use('/api/vendors', vendorRoutes);
 
 app.use((_req: Request, res: Response) => res.status(404).json({ success: false, message: 'Route not found' }));
 

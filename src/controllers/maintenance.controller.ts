@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound } from '../utils/response';
+import { uploadPrivateBuffer, getSignedDownloadUrl } from '../services/upload.service';
 
 const generateBillsSchema = z.object({
   amount: z.number().positive(),
@@ -179,7 +180,7 @@ export async function getBillById(req: Request, res: Response) {
     },
   });
   if (!raw) return notFound(res, 'Bill not found');
-  const { flat, ...rest } = raw;
+  const { flat, proofPublicId, proofResourceType, proofFormat, ...rest } = raw;
   const sec = flat?.wing?.users?.[0];
   return ok(res, {
     ...rest,
@@ -189,7 +190,19 @@ export async function getBillById(req: Request, res: Response) {
       phone: sec?.phone ?? '',
       upiId: sec?.upiId ?? null,
     },
+    hasPaymentProof: !!proofPublicId,
   });
+}
+
+export async function getBillPaymentProofUrl(req: Request, res: Response) {
+  const { id: billId } = req.params;
+  const bill = await prisma.maintenanceBill.findFirst({
+    where: { id: billId, wingId: req.user.wing_id },
+  });
+  if (!bill || !bill.proofPublicId) return notFound(res, 'Payment proof not found');
+
+  const url = getSignedDownloadUrl(bill.proofPublicId, bill.proofResourceType!, bill.proofFormat);
+  return ok(res, { url, expiresInSeconds: 300 });
 }
 
 export async function claimUpiPayment(req: Request, res: Response) {
@@ -202,9 +215,25 @@ export async function claimUpiPayment(req: Request, res: Response) {
   });
   if (!bill) return notFound(res, 'Bill not found or already processed');
 
+  let proofFields: { proofPublicId?: string; proofResourceType?: string; proofFormat?: string | null } = {};
+  if (req.file) {
+    try {
+      const uploadResult = await uploadPrivateBuffer(req.file.buffer, `payment-proof/${flatId}`);
+      proofFields = {
+        proofPublicId: uploadResult.publicId,
+        proofResourceType: uploadResult.resourceType,
+        proofFormat: uploadResult.format,
+      };
+    } catch (err: any) {
+      console.error('[claimUpiPayment] Screenshot upload failed:', err.message);
+      // Don't block the payment claim if the screenshot upload fails —
+      // the secretary can still verify manually via UPI app history.
+    }
+  }
+
   const updated = await prisma.maintenanceBill.update({
     where: { id: billId },
-    data: { status: 'PENDING_VERIFICATION', paymentMode: 'UPI' },
+    data: { status: 'PENDING_VERIFICATION', paymentMode: 'UPI', ...proofFields },
     include: { flat: { select: { number: true, floor: true } } },
   });
   return ok(res, updated, 'Payment claimed. Awaiting secretary verification.');

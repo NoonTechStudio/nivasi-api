@@ -4,7 +4,7 @@ import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound } from '../utils/response';
 
 const raiseComplaintSchema = z.object({
-  category: z.enum(['PLUMBING', 'ELECTRICAL', 'LIFT', 'CLEANING', 'SECURITY', 'OTHER']),
+  category: z.enum(['PLUMBING', 'ELECTRICAL', 'LIFT', 'CLEANING', 'SECURITY', 'LOST_FOUND', 'OTHER']),
   location: z.string().min(1),
   description: z.string().max(200).optional(),
   photo_url: z.string().url().optional(),

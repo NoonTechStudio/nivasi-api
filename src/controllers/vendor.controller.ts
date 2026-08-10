@@ -29,6 +29,16 @@ const completeJobSchema = z.object({
   paymentMode: z.enum(['UPI', 'CASH', 'CHEQUE']).optional(),
 });
 
+// Residents can see that a vendor exists, was assigned work, and its status —
+// but not what the society paid them. Cost/payment info stays Secretary-only.
+function stripJobFinancialsForResident<T extends { jobs: any[] }>(vendor: T, role: string): T {
+  if (role !== 'RESIDENT') return vendor;
+  return {
+    ...vendor,
+    jobs: vendor.jobs.map(({ cost, paymentMode, ...rest }) => rest),
+  };
+}
+
 export async function listVendors(req: Request, res: Response) {
   try {
     const wingId = req.user.wing_id;
@@ -42,7 +52,8 @@ export async function listVendors(req: Request, res: Response) {
       include: { jobs: { orderBy: { createdAt: 'desc' }, take: 1 } },
       orderBy: { createdAt: 'desc' },
     });
-    return ok(res, vendors);
+    const result = vendors.map((v) => stripJobFinancialsForResident(v, req.user.role));
+    return ok(res, result);
   } catch (err: any) {
     console.error('[listVendors] Error:', err.message);
     return res.status(500).json({ success: false, message: err.message });
@@ -56,7 +67,7 @@ export async function getVendorDetail(req: Request, res: Response) {
     include: { jobs: { orderBy: { createdAt: 'desc' } } },
   });
   if (!vendor) return notFound(res, 'Vendor not found');
-  return ok(res, vendor);
+  return ok(res, stripJobFinancialsForResident(vendor, req.user.role));
 }
 
 export async function createVendor(req: Request, res: Response) {

@@ -13,14 +13,17 @@ import { requireRole } from '../middleware/roleGuard';
 import { wingGuard } from '../middleware/wingGuard';
 
 const router = Router();
-router.use(authenticate, wingGuard, requireRole('WING_ADMIN'));
+router.use(authenticate, wingGuard);
 
-router.get('/', listVendors);
-router.get('/:id', getVendorDetail);
-router.post('/', createVendor);
-router.put('/:id', updateVendor);
-router.delete('/:id', deleteVendor);
-router.post('/:id/jobs', assignVendorJob);
-router.put('/:id/jobs/:jobId/complete', completeVendorJob);
+// Read access — Secretary and Residents both
+router.get('/', requireRole('WING_ADMIN', 'RESIDENT'), listVendors);
+router.get('/:id', requireRole('WING_ADMIN', 'RESIDENT'), getVendorDetail);
+
+// Mutations — Secretary only
+router.post('/', requireRole('WING_ADMIN'), createVendor);
+router.put('/:id', requireRole('WING_ADMIN'), updateVendor);
+router.delete('/:id', requireRole('WING_ADMIN'), deleteVendor);
+router.post('/:id/jobs', requireRole('WING_ADMIN'), assignVendorJob);
+router.put('/:id/jobs/:jobId/complete', requireRole('WING_ADMIN'), completeVendorJob);
 
 export default router;

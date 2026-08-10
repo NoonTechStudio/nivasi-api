@@ -100,6 +100,7 @@ model Flat {
   users         User[]
   bills         MaintenanceBill[]
   vehicles      Vehicle[]
+  domesticHelp  DomesticHelp[]
   createdAt     DateTime          @default(now())
 }
 
@@ -161,6 +162,9 @@ model MaintenanceBill {
   paidAt      DateTime?
   paymentMode PaymentMode?
   receiptUrl  String?
+  proofPublicId     String?
+  proofResourceType String?
+  proofFormat       String?
   createdAt   DateTime     @default(now())
 
   @@unique([flatId, month, year])
@@ -232,6 +236,7 @@ enum ComplaintCategory {
   LIFT
   CLEANING
   SECURITY
+  LOST_FOUND
   OTHER
 }
 
@@ -396,4 +401,26 @@ model VendorJob {
 enum VendorJobStatus {
   ASSIGNED
   COMPLETED
+}
+
+model DomesticHelp {
+  id        String            @id @default(cuid())
+  flatId    String
+  flat      Flat              @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  wingId    String
+  name      String
+  phone     String
+  role      DomesticHelpRole
+  notes     String?
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+}
+
+enum DomesticHelpRole {
+  MAID
+  COOK
+  DRIVER
+  NANNY
+  WATCHMAN
+  OTHER
 }

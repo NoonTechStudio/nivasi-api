@@ -86,6 +86,7 @@ model Wing {
   visitors   Visitor[]
   utilityServices UtilityService[]
   vendors    Vendor[]
+  resaleListings ResaleListing[]
   createdAt  DateTime    @default(now())
 }
 
@@ -101,6 +102,7 @@ model Flat {
   bills         MaintenanceBill[]
   vehicles      Vehicle[]
   domesticHelp  DomesticHelp[]
+  resaleListings ResaleListing[]
   createdAt     DateTime          @default(now())
 }
 
@@ -125,6 +127,8 @@ model User {
   createdAt    DateTime      @default(now())
   sessions     Session[]
   vaultDocuments VaultDocument[]
+  resaleListings ResaleListing[] @relation("ListingCreatedBy")
+  reviewedListings ResaleListing[] @relation("ListingReviewedBy")
 }
 
 enum ResidentType {
@@ -423,4 +427,48 @@ enum DomesticHelpRole {
   NANNY
   WATCHMAN
   OTHER
+}
+
+model ResaleListing {
+  id              String        @id @default(cuid())
+  wingId          String
+  wing            Wing          @relation(fields: [wingId], references: [id])
+  flatId          String
+  flat            Flat          @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  createdById     String
+  createdBy       User          @relation("ListingCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  listingType     ListingType
+  bhkType         String
+  carpetArea      Int?
+  price           Float
+  description     String
+  contactPhone    String
+  status          ListingStatus @default(PENDING)
+  rejectionReason String?
+  reviewedById    String?
+  reviewedBy      User?         @relation("ListingReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  photos          ResaleListingPhoto[]
+}
+
+enum ListingType {
+  SALE
+  RENT
+}
+
+enum ListingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ResaleListingPhoto {
+  id        String        @id @default(cuid())
+  listingId String
+  listing   ResaleListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  publicId  String
+  url       String
+  createdAt DateTime      @default(now())
 }

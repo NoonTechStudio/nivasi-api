@@ -58,7 +58,7 @@ export async function addDomesticHelp(req: Request, res: Response) {
   if (!flatId || !wingId) return badRequest(res, 'No flat associated with your account');
 
   const staff = await prisma.domesticHelp.create({
-    data: { ...parsed.data, flatId, wingId },
+    data: { ...parsed.data, flatId, wingId } as any,
   });
   return created(res, staff, 'Added to your household staff');
 }

@@ -36,3 +36,31 @@ export function handleSingleUpload(field: string) {
     });
   };
 }
+
+const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/heic', 'image/heif']);
+
+const uploadImages = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB per file
+  fileFilter: (_req, file, cb) => {
+    if (!IMAGE_MIME_TYPES.has(file.mimetype)) {
+      cb(new Error('Only JPEG, PNG or HEIC images are allowed'));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+// Wraps multer's multi-file handler (image-only) for things like Resale/Rent
+// Listing photos, converting errors to a clean 400 response.
+export function handleMultipleImageUpload(field: string, maxCount: number) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    uploadImages.array(field, maxCount)(req, res, (err: unknown) => {
+      if (err) {
+        const message = err instanceof Error ? err.message : 'Upload failed';
+        return res.status(400).json({ success: false, message });
+      }
+      next();
+    });
+  };
+}

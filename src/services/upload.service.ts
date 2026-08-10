@@ -63,3 +63,25 @@ export function getSignedDownloadUrl(
 export async function deletePrivateFile(publicId: string, resourceType: string): Promise<void> {
   await cloudinary.uploader.destroy(publicId, { resource_type: resourceType, type: 'private' });
 }
+
+// ─── Public buffer uploads — used for content that's meant to be visible to
+// everyone once approved (e.g. Resale/Rent Listing photos). Unlike the
+// private vault uploads, these get a permanent public secure_url.
+
+export interface PublicUploadResult {
+  publicId: string;
+  secureUrl: string;
+}
+
+export async function uploadPublicBuffer(buffer: Buffer, folder: string): Promise<PublicUploadResult> {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder, resource_type: 'image' },
+      (error, result) => {
+        if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'));
+        resolve({ publicId: result.public_id, secureUrl: result.secure_url });
+      },
+    );
+    stream.end(buffer);
+  });
+}

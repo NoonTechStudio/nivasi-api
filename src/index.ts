@@ -21,6 +21,10 @@ import vaultRoutes from './routes/vault.routes';
 import vendorRoutes from './routes/vendor.routes';
 import domesticHelpRoutes from './routes/domesticHelp.routes';
 import resaleListingRoutes from './routes/resaleListing.routes';
+import guestInviteRoutes from './routes/guestInvite.routes';
+import emergencyAlertRoutes from './routes/emergencyAlert.routes';
+import amenityRoutes from './routes/amenity.routes';
+import familyMemberRoutes from './routes/familyMember.routes';
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err.message);
@@ -79,6 +83,10 @@ app.use('/api/vault', vaultRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/domestic-help', domesticHelpRoutes);
 app.use('/api/resale-listings', resaleListingRoutes);
+app.use('/api/guest-invites', guestInviteRoutes);
+app.use('/api/emergency-alerts', emergencyAlertRoutes);
+app.use('/api/amenities', amenityRoutes);
+app.use('/api/family-members', familyMemberRoutes);
 
 app.use((_req: Request, res: Response) => res.status(404).json({ success: false, message: 'Route not found' }));
 

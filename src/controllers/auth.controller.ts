@@ -101,6 +101,7 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
       society_id: user.societyId ?? '',
       wing_id: user.wingId ?? '',
       flat_id: user.flatId ?? null,
+      is_primary: user.isPrimary,
     });
 
     clearTimeout(timeout);
@@ -117,6 +118,7 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
           societyId: user.societyId,
           wingId: user.wingId,
           flatId: user.flatId,
+          isPrimary: user.isPrimary,
         },
       },
     });
@@ -188,6 +190,7 @@ export async function handleRefresh(req: Request, res: Response) {
     society_id: user.societyId ?? '',
     wing_id: user.wingId ?? '',
     flat_id: user.flatId,
+    is_primary: user.isPrimary,
   });
 
   return ok(res, { token }, 'Token refreshed');

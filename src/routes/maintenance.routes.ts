@@ -11,6 +11,8 @@ import {
   confirmPayment,
   rejectPayment,
   getBillPaymentProofUrl,
+  getLateFeeSettings,
+  updateLateFeeSettings,
 } from '../controllers/maintenance.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/roleGuard';
@@ -31,5 +33,7 @@ router.patch('/bills/:id/claim-payment', requireRole('RESIDENT'), handleSingleUp
 router.patch('/bills/:id/confirm-payment', requireRole('WING_ADMIN'), confirmPayment);
 router.patch('/bills/:id/reject-payment', requireRole('WING_ADMIN'), rejectPayment);
 router.get('/bills/:id/proof-url', requireRole('WING_ADMIN'), getBillPaymentProofUrl);
+router.get('/late-fee-settings', requireRole('WING_ADMIN'), getLateFeeSettings);
+router.put('/late-fee-settings', requireRole('WING_ADMIN'), updateLateFeeSettings);
 
 export default router;

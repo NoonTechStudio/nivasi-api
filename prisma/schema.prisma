@@ -87,6 +87,11 @@ model Wing {
   utilityServices UtilityService[]
   vendors    Vendor[]
   resaleListings ResaleListing[]
+  guestInvites GuestInvite[]
+  emergencyAlerts EmergencyAlert[]
+  amenities  Amenity[]
+  lateFeeAmount    Float @default(0)
+  lateFeeGraceDays Int   @default(5)
   createdAt  DateTime    @default(now())
 }
 
@@ -103,6 +108,9 @@ model Flat {
   vehicles      Vehicle[]
   domesticHelp  DomesticHelp[]
   resaleListings ResaleListing[]
+  guestInvites  GuestInvite[]
+  emergencyAlerts EmergencyAlert[]
+  amenityBookings AmenityBooking[]
   createdAt     DateTime          @default(now())
 }
 
@@ -129,6 +137,11 @@ model User {
   vaultDocuments VaultDocument[]
   resaleListings ResaleListing[] @relation("ListingCreatedBy")
   reviewedListings ResaleListing[] @relation("ListingReviewedBy")
+  guestInvitesCreated GuestInvite[]
+  raisedAlerts EmergencyAlert[] @relation("AlertRaisedBy")
+  resolvedAlerts EmergencyAlert[] @relation("AlertResolvedBy")
+  amenityBookings AmenityBooking[]
+  familyRelation String?
 }
 
 enum ResidentType {
@@ -169,6 +182,7 @@ model MaintenanceBill {
   proofPublicId     String?
   proofResourceType String?
   proofFormat       String?
+  lateFeeApplied    Float        @default(0)
   createdAt   DateTime     @default(now())
 
   @@unique([flatId, month, year])
@@ -471,4 +485,92 @@ model ResaleListingPhoto {
   publicId  String
   url       String
   createdAt DateTime      @default(now())
+}
+
+model GuestInvite {
+  id              String            @id @default(cuid())
+  wingId          String
+  wing            Wing              @relation(fields: [wingId], references: [id])
+  flatId          String
+  flat            Flat              @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  createdById     String
+  createdBy       User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  guestName       String
+  guestPhone      String?
+  purpose         String?
+  visitDate       DateTime
+  otpCode         String
+  status          GuestInviteStatus @default(PENDING)
+  createdVisitorId String?
+  usedAt          DateTime?
+  createdAt       DateTime          @default(now())
+}
+
+enum GuestInviteStatus {
+  PENDING
+  USED
+  CANCELLED
+  EXPIRED
+}
+
+model EmergencyAlert {
+  id           String      @id @default(cuid())
+  wingId       String
+  wing         Wing        @relation(fields: [wingId], references: [id])
+  flatId       String
+  flat         Flat        @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  raisedById   String
+  raisedBy     User        @relation("AlertRaisedBy", fields: [raisedById], references: [id], onDelete: Cascade)
+  status       AlertStatus @default(ACTIVE)
+  resolvedById String?
+  resolvedBy   User?       @relation("AlertResolvedBy", fields: [resolvedById], references: [id])
+  resolvedAt   DateTime?
+  notes        String?
+  createdAt    DateTime    @default(now())
+}
+
+enum AlertStatus {
+  ACTIVE
+  RESOLVED
+}
+
+model Amenity {
+  id               String           @id @default(cuid())
+  wingId           String
+  wing             Wing             @relation(fields: [wingId], references: [id])
+  name             String
+  description      String?
+  capacityPerSlot  Int              @default(1)
+  slotMinutes      Int              @default(60)
+  openTime         String
+  closeTime        String
+  requiresApproval Boolean          @default(false)
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  bookings         AmenityBooking[]
+}
+
+model AmenityBooking {
+  id              String        @id @default(cuid())
+  amenityId       String
+  amenity         Amenity       @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+  flatId          String
+  flat            Flat          @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  bookedById      String
+  bookedBy        User          @relation(fields: [bookedById], references: [id], onDelete: Cascade)
+  bookingDate     DateTime
+  slotStart       String
+  slotEnd         String
+  status          BookingStatus @default(CONFIRMED)
+  rejectionReason String?
+  createdAt       DateTime      @default(now())
+
+  @@unique([amenityId, bookingDate, slotStart, bookedById])
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+  CANCELLED
 }

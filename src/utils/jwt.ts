@@ -7,6 +7,7 @@ export interface JwtPayload {
   society_id: string;
   wing_id: string;
   flat_id: string | null;
+  is_primary?: boolean;
 }
 
 export function signToken(payload: JwtPayload): string {

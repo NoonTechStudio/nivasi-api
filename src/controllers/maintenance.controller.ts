@@ -18,6 +18,30 @@ const markPaidSchema = z.object({
 const VALID_STATUSES = ['PENDING', 'PAID', 'OVERDUE', 'PENDING_VERIFICATION'] as const;
 type ValidStatus = typeof VALID_STATUSES[number];
 
+// Flips PENDING bills past the wing's grace period into OVERDUE and freezes
+// the late fee onto the bill. No cron infra exists yet, so this runs lazily
+// on every read that touches bills for a wing — cheap (one wing lookup +
+// one bulk update) and keeps status/lateFeeApplied accurate without a job.
+async function syncWingOverdueBills(wingId: string) {
+  const wing = await prisma.wing.findUnique({
+    where: { id: wingId },
+    select: { lateFeeAmount: true, lateFeeGraceDays: true },
+  });
+  if (!wing || wing.lateFeeAmount <= 0) return;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - wing.lateFeeGraceDays);
+
+  await prisma.maintenanceBill.updateMany({
+    where: { wingId, status: 'PENDING', dueDate: { lt: cutoff } },
+    data: { status: 'OVERDUE', lateFeeApplied: wing.lateFeeAmount },
+  });
+}
+
+function withTotalDue<T extends { amount: number; lateFeeApplied: number }>(bill: T) {
+  return { ...bill, totalDue: bill.amount + bill.lateFeeApplied };
+}
+
 export async function listBills(req: Request, res: Response) {
   try {
     const wingId = req.user.wing_id;
@@ -49,12 +73,14 @@ export async function listBills(req: Request, res: Response) {
       ...(statusFilter ? { status: statusFilter } : {}),
     };
 
+    await syncWingOverdueBills(wingId);
+
     const bills = await prisma.maintenanceBill.findMany({
       where,
       include: { flat: { select: { number: true, floor: true } } },
       orderBy: [{ year: 'desc' }, { month: 'desc' }],
     });
-    return ok(res, bills);
+    return ok(res, bills.map(withTotalDue));
   } catch (err: any) {
     console.error('[listBills] Error:', err.message);
     return res.status(500).json({ success: false, message: err.message });
@@ -159,6 +185,9 @@ export async function generateBills(req: Request, res: Response) {
 
 export async function getBillById(req: Request, res: Response) {
   const { id } = req.params;
+  const existing = await prisma.maintenanceBill.findUnique({ where: { id }, select: { wingId: true } });
+  if (existing) await syncWingOverdueBills(existing.wingId);
+
   const raw = await prisma.maintenanceBill.findUnique({
     where: { id },
     include: {
@@ -183,7 +212,7 @@ export async function getBillById(req: Request, res: Response) {
   const { flat, proofPublicId, proofResourceType, proofFormat, ...rest } = raw;
   const sec = flat?.wing?.users?.[0];
   return ok(res, {
-    ...rest,
+    ...withTotalDue(rest),
     flat: flat ? { number: flat.number, floor: flat.floor } : null,
     secretary: {
       name: sec?.name ?? '',
@@ -210,8 +239,11 @@ export async function claimUpiPayment(req: Request, res: Response) {
   const flatId = req.user.flat_id;
   if (!flatId) return badRequest(res, 'No flat associated with your account');
 
+  const existing = await prisma.maintenanceBill.findUnique({ where: { id: billId }, select: { wingId: true } });
+  if (existing) await syncWingOverdueBills(existing.wingId);
+
   const bill = await prisma.maintenanceBill.findFirst({
-    where: { id: billId, flatId, status: 'PENDING' },
+    where: { id: billId, flatId, status: { in: ['PENDING', 'OVERDUE'] } },
   });
   if (!bill) return notFound(res, 'Bill not found or already processed');
 
@@ -315,4 +347,29 @@ export async function getBillingSummary(req: Request, res: Response) {
     pending_verification: pendingVerification,
     total_collected: totalCollected._sum.amount ?? 0,
   });
+}
+
+export async function getLateFeeSettings(req: Request, res: Response) {
+  const wing = await prisma.wing.findUnique({
+    where: { id: req.user.wing_id },
+    select: { lateFeeAmount: true, lateFeeGraceDays: true },
+  });
+  if (!wing) return notFound(res, 'Wing not found');
+  return ok(res, wing);
+}
+
+const lateFeeSettingsSchema = z.object({
+  late_fee_amount: z.number().min(0),
+  grace_period_days: z.number().int().min(0),
+});
+
+export async function updateLateFeeSettings(req: Request, res: Response) {
+  const parsed = lateFeeSettingsSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+
+  const wing = await prisma.wing.update({
+    where: { id: req.user.wing_id },
+    data: { lateFeeAmount: parsed.data.late_fee_amount, lateFeeGraceDays: parsed.data.grace_period_days },
+  });
+  return ok(res, { lateFeeAmount: wing.lateFeeAmount, lateFeeGraceDays: wing.lateFeeGraceDays }, 'Late fee settings updated');
 }

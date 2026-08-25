@@ -56,3 +56,33 @@ export async function markNoticeSeen(req: Request, res: Response) {
   });
   return ok(res, null, 'Marked as seen');
 }
+
+// Secretary-only: who has (and hasn't) seen a given notice, plus the total
+// resident headcount for the wing so the UI can show "X of Y have seen this".
+export async function getNoticeSeenDetail(req: Request, res: Response) {
+  const notice = await prisma.notice.findFirst({ where: { id: req.params.id, wingId: req.user.wing_id } });
+  if (!notice) return notFound(res, 'Notice not found');
+
+  const [totalResidents, seenRows] = await Promise.all([
+    prisma.user.count({ where: { wingId: req.user.wing_id, role: 'RESIDENT', isActive: true } }),
+    prisma.noticeSeen.findMany({ where: { noticeId: req.params.id }, orderBy: { seenAt: 'desc' } }),
+  ]);
+
+  const userIds = seenRows.map((r) => r.userId);
+  const users = userIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, name: true, flat: { select: { number: true } } },
+      })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const seenBy = seenRows.map((r) => ({
+    userId: r.userId,
+    name: userMap.get(r.userId)?.name ?? 'Unknown',
+    flatNumber: userMap.get(r.userId)?.flat?.number ?? null,
+    seenAt: r.seenAt,
+  }));
+
+  return ok(res, { totalResidents, seenCount: seenBy.length, seenBy });
+}

@@ -380,3 +380,15 @@ export async function updateSecretaryUpi(req: Request, res: Response) {
   });
   return ok(res, null, 'UPI ID saved successfully');
 }
+
+// The society-wide login code residents use in place of a real SMS OTP.
+// Secretary looks this up to share with residents when adding them.
+export async function getSocietyLoginCode(req: Request, res: Response) {
+  if (!req.user.society_id) return badRequest(res, 'No society associated with your account');
+  const society = await prisma.society.findUnique({
+    where: { id: req.user.society_id },
+    select: { name: true, demoOtpCode: true },
+  });
+  if (!society) return notFound(res, 'Society not found');
+  return ok(res, society);
+}

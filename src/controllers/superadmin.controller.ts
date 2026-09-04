@@ -78,10 +78,16 @@ const createSocietySchema = z.object({
   mapAddress: z.string().optional(),
 });
 
+function generateDemoOtpCode(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
 export async function createSociety(req: Request, res: Response) {
   const parsed = createSocietySchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
-  const newSociety = await prisma.society.create({ data: parsed.data as any });
+  const newSociety = await prisma.society.create({
+    data: { ...parsed.data, demoOtpCode: generateDemoOtpCode() } as any,
+  });
 
   const trialEnd = new Date();
   trialEnd.setDate(trialEnd.getDate() + 30);
@@ -117,6 +123,18 @@ export async function updateSociety(req: Request, res: Response) {
   if (!society) return notFound(res, 'Society not found');
   const updated = await prisma.society.update({ where: { id }, data: parsed.data });
   return ok(res, updated);
+}
+
+export async function regenerateSocietyOtp(req: Request, res: Response) {
+  const { id } = req.params;
+  const society = await prisma.society.findUnique({ where: { id } });
+  if (!society) return notFound(res, 'Society not found');
+
+  const updated = await prisma.society.update({
+    where: { id },
+    data: { demoOtpCode: generateDemoOtpCode() },
+  });
+  return ok(res, { demoOtpCode: updated.demoOtpCode }, 'New login code generated');
 }
 
 export async function deleteSociety(req: Request, res: Response) {

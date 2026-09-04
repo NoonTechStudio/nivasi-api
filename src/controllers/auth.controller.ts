@@ -58,19 +58,8 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Phone and OTP are required' });
     }
 
-    // Verify OTP
-    const isValid = await verifyOTP(cleanPhone, cleanOtp);
-    console.log('[verifyOtp] OTP valid:', isValid);
-
-    if (!isValid) {
-      clearTimeout(timeout);
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid OTP. Please try again.',
-      });
-    }
-
-    // Find user
+    // Find user first — the valid OTP depends on which society they belong
+    // to, so we need the user record before we can check the code.
     console.log('[verifyOtp] Finding user with phone:', cleanPhone);
     const users = await prisma.user.findMany({
       where: { phone: cleanPhone },
@@ -93,6 +82,27 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
     )[0];
 
     console.log('[verifyOtp] Logging in as:', user.role, user.phone);
+
+    // Each society has its own login code, shared by its residents and
+    // secretary. Platform-level accounts (SUPER_ADMIN, or anyone not yet
+    // attached to a society) fall back to a fixed internal code — they're
+    // few, internal, and not something we hand out to societies.
+    let isValid = false;
+    if (user.societyId) {
+      const society = await prisma.society.findUnique({ where: { id: user.societyId } });
+      isValid = !!society?.demoOtpCode && cleanOtp === society.demoOtpCode;
+    } else {
+      isValid = await verifyOTP(cleanPhone, cleanOtp);
+    }
+    console.log('[verifyOtp] OTP valid:', isValid);
+
+    if (!isValid) {
+      clearTimeout(timeout);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid OTP. Please try again.',
+      });
+    }
 
     // Generate JWT using signToken so the payload matches JwtPayload (snake_case)
     const token = signToken({

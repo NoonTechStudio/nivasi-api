@@ -20,6 +20,7 @@ model Society {
   subscriptionStatus String    @default("ACTIVE")
   planType           String    @default("STARTER")
   monthlyAmount      Float     @default(499)
+  demoOtpCode        String?
   subscriptionStart  DateTime  @default(now())
   subscriptionEnd    DateTime?
   trialEndsAt        DateTime?

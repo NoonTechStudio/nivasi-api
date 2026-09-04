@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   getStats,
-  getSocieties, createSociety, updateSociety, deleteSociety,
+  getSocieties, createSociety, updateSociety, deleteSociety, regenerateSocietyOtp,
   createWing, getWingDetail, deleteWing,
   createFlatInWing,
   setWingSecretary,
@@ -24,6 +24,7 @@ router.get('/societies', getSocieties);
 router.post('/societies', createSociety);
 router.put('/societies/:id', updateSociety);
 router.delete('/societies/:id', deleteSociety);
+router.post('/societies/:id/regenerate-otp', regenerateSocietyOtp);
 
 // Wings
 router.post('/wings', createWing);

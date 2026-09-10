@@ -2,11 +2,11 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound } from '../utils/response';
+import { uploadPublicBuffer } from '../services/upload.service';
 
 const logVisitorSchema = z.object({
   flat_id: z.string().min(1),
   visitor_name: z.string().min(1),
-  photo_url: z.string().optional(),
   purpose: z.string().optional(),
   delivery_handling: z.enum(['CABIN_DROP', 'HELPER_DELIVERY', 'DIRECT_DELIVERY']).optional(),
 });
@@ -32,12 +32,27 @@ export async function logVisitor(req: Request, res: Response) {
   const flat = await prisma.flat.findFirst({ where: { id: parsed.data.flat_id, wingId: req.user.wing_id } });
   if (!flat) return notFound(res, 'Flat not found');
 
+  // The photo comes in as a real file upload (see upload.middleware's
+  // handleSingleUpload) — previously the mobile app sent the device's local
+  // file:// path as a plain string, which only ever worked on the device
+  // that took the photo and showed up broken for everyone else.
+  let photoUrl: string | undefined;
+  const file = req.file as Express.Multer.File | undefined;
+  if (file) {
+    try {
+      const uploaded = await uploadPublicBuffer(file.buffer, 'visitors');
+      photoUrl = uploaded.secureUrl;
+    } catch (err: any) {
+      console.error('[logVisitor] Photo upload failed:', err.message);
+    }
+  }
+
   const visitor = await prisma.visitor.create({
     data: {
       wingId: req.user.wing_id,
       flatId: parsed.data.flat_id,
       visitorName: parsed.data.visitor_name,
-      photoUrl: parsed.data.photo_url,
+      photoUrl,
       purpose: parsed.data.purpose,
       deliveryHandling: parsed.data.delivery_handling,
       status: 'APPROVED',

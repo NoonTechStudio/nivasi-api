@@ -205,8 +205,13 @@ export async function deleteSociety(req: Request, res: Response) {
 const createWingSchema = z.object({
   society_id: z.string().min(1, 'Society is required'),
   name: z.string().min(1, 'Wing name is required'),
-  total_floors: z.number().int().min(1),
-  flats_per_floor: z.number().int().min(1),
+  layout_type: z.enum(['FLOORS', 'UNITS']).default('FLOORS'),
+  // FLOORS layout (apartment buildings)
+  total_floors: z.number().int().min(1).optional(),
+  flats_per_floor: z.number().int().min(1).optional(),
+  // UNITS layout (villas / bungalows / row houses — no meaningful floors)
+  total_units: z.number().int().min(1).optional(),
+  unit_label: z.string().min(1).optional(),
   auto_generate_flats: z.boolean().default(false),
   secretary_name: z.string().min(2).optional(),
   secretary_phone: z.string().regex(/^[6-9]\d{9}$/).optional(),
@@ -216,7 +221,20 @@ export async function createWing(req: Request, res: Response) {
   const parsed = createWingSchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
 
-  const { society_id, name, total_floors, flats_per_floor, auto_generate_flats, secretary_name, secretary_phone } = parsed.data;
+  const {
+    society_id, name, layout_type,
+    total_floors, flats_per_floor, total_units, unit_label,
+    auto_generate_flats, secretary_name, secretary_phone,
+  } = parsed.data;
+
+  if (auto_generate_flats) {
+    if (layout_type === 'FLOORS' && (!total_floors || !flats_per_floor)) {
+      return badRequest(res, 'Total floors and flats per floor are required');
+    }
+    if (layout_type === 'UNITS' && !total_units) {
+      return badRequest(res, 'Total number of units is required');
+    }
+  }
 
   const society = await prisma.society.findUnique({ where: { id: society_id } });
   if (!society) return notFound(res, 'Society not found');
@@ -226,13 +244,24 @@ export async function createWing(req: Request, res: Response) {
   let flatsCreated = 0;
   if (auto_generate_flats) {
     const flats: { number: string; floor: number; wingId: string }[] = [];
-    for (let floor = 1; floor <= total_floors; floor++) {
-      for (let flatNum = 1; flatNum <= flats_per_floor; flatNum++) {
-        flats.push({ number: `${name}-${floor}${String(flatNum).padStart(2, '0')}`, floor, wingId: wing.id });
+    if (layout_type === 'UNITS') {
+      // Villas/bungalows/row houses laid out side by side, not stacked —
+      // there's no meaningful "floor", so every unit sits on a single
+      // nominal level and gets numbered sequentially instead.
+      const prefix = unit_label?.trim() || name;
+      for (let n = 1; n <= total_units!; n++) {
+        flats.push({ number: `${prefix}-${String(n).padStart(2, '0')}`, floor: 1, wingId: wing.id });
       }
+      flatsCreated = total_units!;
+    } else {
+      for (let floor = 1; floor <= total_floors!; floor++) {
+        for (let flatNum = 1; flatNum <= flats_per_floor!; flatNum++) {
+          flats.push({ number: `${name}-${floor}${String(flatNum).padStart(2, '0')}`, floor, wingId: wing.id });
+        }
+      }
+      flatsCreated = total_floors! * flats_per_floor!;
     }
     await prisma.flat.createMany({ data: flats });
-    flatsCreated = total_floors * flats_per_floor;
   }
 
   if (secretary_name && secretary_phone) {

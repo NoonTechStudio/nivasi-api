@@ -25,6 +25,7 @@ import guestInviteRoutes from './routes/guestInvite.routes';
 import emergencyAlertRoutes from './routes/emergencyAlert.routes';
 import amenityRoutes from './routes/amenity.routes';
 import familyMemberRoutes from './routes/familyMember.routes';
+import notificationsRoutes from './routes/notifications.routes';
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err.message);
@@ -87,6 +88,7 @@ app.use('/api/guest-invites', guestInviteRoutes);
 app.use('/api/emergency-alerts', emergencyAlertRoutes);
 app.use('/api/amenities', amenityRoutes);
 app.use('/api/family-members', familyMemberRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 app.use((_req: Request, res: Response) => res.status(404).json({ success: false, message: 'Route not found' }));
 

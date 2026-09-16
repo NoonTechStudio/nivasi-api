@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound } from '../utils/response';
 import { uploadPublicBuffer } from '../services/upload.service';
+import { notifyFlat } from '../services/notification.service';
 
 const logVisitorSchema = z.object({
   flat_id: z.string().min(1),
@@ -72,6 +73,13 @@ export async function approveVisitor(req: Request, res: Response) {
     where: { id: req.params.id },
     data: { status: 'APPROVED', approvedBy: req.user.user_id, entryTime: new Date() },
   });
+  notifyFlat({
+    flatId: updated.flatId,
+    title: 'Visitor approved',
+    body: `${updated.visitorName} was approved for entry.`,
+    type: 'VISITOR_APPROVED',
+    relatedId: updated.id,
+  });
   return ok(res, updated, 'Visitor approved');
 }
 
@@ -84,6 +92,13 @@ export async function denyVisitor(req: Request, res: Response) {
   const updated = await prisma.visitor.update({
     where: { id: req.params.id },
     data: { status: 'DENIED', approvedBy: req.user.user_id },
+  });
+  notifyFlat({
+    flatId: updated.flatId,
+    title: 'Visitor denied',
+    body: `${updated.visitorName} was denied entry.`,
+    type: 'VISITOR_DENIED',
+    relatedId: updated.id,
   });
   return ok(res, updated, 'Visitor denied');
 }

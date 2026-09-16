@@ -2,12 +2,13 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound } from '../utils/response';
+import { uploadPublicBuffer } from '../services/upload.service';
+import { notifyUser } from '../services/notification.service';
 
 const raiseComplaintSchema = z.object({
   category: z.enum(['PLUMBING', 'ELECTRICAL', 'LIFT', 'CLEANING', 'SECURITY', 'LOST_FOUND', 'OTHER']),
   location: z.string().min(1),
   description: z.string().max(200).optional(),
-  photo_url: z.string().url().optional(),
 });
 
 const assignSchema = z.object({ assigned_to: z.string().min(1) });
@@ -32,6 +33,17 @@ export async function raiseComplaint(req: Request, res: Response) {
 
   if (!req.user.flat_id) return badRequest(res, 'No flat associated with your account');
 
+  let photoUrl: string | undefined;
+  const file = req.file as Express.Multer.File | undefined;
+  if (file) {
+    try {
+      const uploaded = await uploadPublicBuffer(file.buffer, 'complaints');
+      photoUrl = uploaded.secureUrl;
+    } catch (err: any) {
+      console.error('[raiseComplaint] Photo upload failed:', err.message);
+    }
+  }
+
   const complaint = await prisma.complaint.create({
     data: {
       wingId: req.user.wing_id,
@@ -40,7 +52,7 @@ export async function raiseComplaint(req: Request, res: Response) {
       category: parsed.data.category,
       location: parsed.data.location,
       description: parsed.data.description,
-      photoUrl: parsed.data.photo_url,
+      photoUrl,
     },
   });
   return created(res, complaint, 'Complaint raised');
@@ -74,5 +86,14 @@ export async function updateComplaintStatus(req: Request, res: Response) {
       resolvedAt: parsed.data.status === 'RESOLVED' ? new Date() : null,
     },
   });
+  if (parsed.data.status === 'RESOLVED') {
+    notifyUser({
+      userId: complaint.userId,
+      title: 'Complaint resolved',
+      body: `Your ${complaint.category.toLowerCase()} complaint has been marked as resolved.`,
+      type: 'COMPLAINT_RESOLVED',
+      relatedId: updated.id,
+    });
+  }
   return ok(res, updated);
 }

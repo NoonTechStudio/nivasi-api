@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound, forbidden } from '../utils/response';
 import { uploadPublicBuffer, deleteImage } from '../services/upload.service';
+import { notifyUser } from '../services/notification.service';
 
 const MAX_PHOTOS = 5;
 
@@ -177,6 +178,13 @@ export async function approveListing(req: Request, res: Response) {
     data: { status: 'APPROVED', reviewedById: req.user.user_id, reviewedAt: new Date(), rejectionReason: null },
     include: listingInclude,
   });
+  notifyUser({
+    userId: listing.createdById,
+    title: 'Listing approved',
+    body: 'Your resale/rent listing was approved and is now visible to all residents.',
+    type: 'LISTING_APPROVED',
+    relatedId: updated.id,
+  });
   return ok(res, updated, 'Listing approved and now visible to all residents');
 }
 
@@ -203,6 +211,13 @@ export async function rejectListing(req: Request, res: Response) {
       reviewedAt: new Date(),
     },
     include: listingInclude,
+  });
+  notifyUser({
+    userId: listing.createdById,
+    title: 'Listing rejected',
+    body: `Your resale/rent listing was rejected: ${parsed.data.reason}`,
+    type: 'LISTING_REJECTED',
+    relatedId: updated.id,
   });
   return ok(res, updated, 'Listing rejected');
 }

@@ -143,6 +143,7 @@ model User {
   resolvedAlerts EmergencyAlert[] @relation("AlertResolvedBy")
   amenityBookings AmenityBooking[]
   familyRelation String?
+  notifications  Notification[]
 }
 
 enum ResidentType {
@@ -210,6 +211,8 @@ model Notice {
   body      String?
   category  NoticeCategory
   audience  String         @default("ALL")
+  targetFlatId String?
+  targetFloor  Int?
   photoUrl  String?
   createdAt DateTime       @default(now())
   seenBy    NoticeSeen[]
@@ -221,6 +224,20 @@ enum NoticeCategory {
   EVENT
   MAINTENANCE
   OTHER
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String?
+  type      String
+  relatedId String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
 }
 
 model NoticeSeen {

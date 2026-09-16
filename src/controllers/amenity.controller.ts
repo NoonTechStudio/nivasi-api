@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound, forbidden } from '../utils/response';
+import { notifyUser } from '../services/notification.service';
 
 function toMinutes(t: string) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
 function toTime(mins: number) { return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`; }
@@ -202,10 +203,18 @@ export async function approveBooking(req: Request, res: Response) {
   const { id } = req.params;
   const booking = await prisma.amenityBooking.findFirst({
     where: { id, status: 'PENDING', amenity: { wingId: req.user.wing_id } },
+    include: { amenity: { select: { name: true } } },
   });
   if (!booking) return notFound(res, 'Booking not found or not pending');
 
   const updated = await prisma.amenityBooking.update({ where: { id }, data: { status: 'CONFIRMED' } });
+  notifyUser({
+    userId: booking.bookedById,
+    title: 'Booking approved',
+    body: `Your booking for ${booking.amenity.name} on ${booking.bookingDate.toDateString()} was approved.`,
+    type: 'BOOKING_APPROVED',
+    relatedId: updated.id,
+  });
   return ok(res, updated, 'Booking approved');
 }
 
@@ -218,12 +227,20 @@ export async function rejectBooking(req: Request, res: Response) {
 
   const booking = await prisma.amenityBooking.findFirst({
     where: { id, status: 'PENDING', amenity: { wingId: req.user.wing_id } },
+    include: { amenity: { select: { name: true } } },
   });
   if (!booking) return notFound(res, 'Booking not found or not pending');
 
   const updated = await prisma.amenityBooking.update({
     where: { id },
     data: { status: 'REJECTED', rejectionReason: parsed.data.reason },
+  });
+  notifyUser({
+    userId: booking.bookedById,
+    title: 'Booking rejected',
+    body: `Your booking for ${booking.amenity.name} was rejected: ${parsed.data.reason}`,
+    type: 'BOOKING_REJECTED',
+    relatedId: updated.id,
   });
   return ok(res, updated, 'Booking rejected');
 }

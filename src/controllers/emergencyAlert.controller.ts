@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound } from '../utils/response';
+import { notifyUser } from '../services/notification.service';
 
 // Resident raises the alert. Returns the on-duty guard's phone (falling back
 // to the secretary's) so the app can auto-dial immediately — no push
@@ -54,6 +55,13 @@ export async function resolveAlert(req: Request, res: Response) {
   const updated = await prisma.emergencyAlert.update({
     where: { id },
     data: { status: 'RESOLVED', resolvedById: req.user.user_id, resolvedAt: new Date() },
+  });
+  notifyUser({
+    userId: alert.raisedById,
+    title: 'Emergency alert resolved',
+    body: 'Your emergency alert has been marked as resolved.',
+    type: 'ALERT_RESOLVED',
+    relatedId: updated.id,
   });
   return ok(res, updated, 'Alert marked as resolved');
 }

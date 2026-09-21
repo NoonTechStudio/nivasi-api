@@ -8,6 +8,12 @@ const createFlatSchema = z.object({
   floor: z.number().int().min(0),
 });
 
+const updateFlatSchema = z.object({
+  number: z.string().min(1).optional(),
+  floor: z.number().int().min(0).optional(),
+  familyMembers: z.number().int().min(1).max(20).optional(),
+});
+
 const addResidentSchema = z.object({
   flatId: z.string().min(1, 'Flat is required'),
   primaryResident: z.object({
@@ -109,10 +115,13 @@ export async function createFlat(req: Request, res: Response) {
 }
 
 export async function updateFlat(req: Request, res: Response) {
+  const parsed = updateFlatSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+
   const flat = await prisma.flat.findFirst({ where: { id: req.params.id, wingId: req.user.wing_id } });
   if (!flat) return notFound(res, 'Flat not found');
 
-  const updated = await prisma.flat.update({ where: { id: req.params.id }, data: req.body });
+  const updated = await prisma.flat.update({ where: { id: req.params.id }, data: parsed.data });
   return ok(res, updated);
 }
 

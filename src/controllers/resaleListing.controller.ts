@@ -72,7 +72,7 @@ export async function listPendingListings(req: Request, res: Response) {
 export async function getListingById(req: Request, res: Response) {
   const { id } = req.params;
   const listing = await prisma.resaleListing.findUnique({ where: { id }, include: listingInclude });
-  if (!listing) return notFound(res, 'Listing not found');
+  if (!listing || listing.wingId !== req.user.wing_id) return notFound(res, 'Listing not found');
 
   const isOwner = listing.createdById === req.user.user_id;
   const isSecretary = req.user.role === 'WING_ADMIN';

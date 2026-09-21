@@ -185,11 +185,17 @@ export async function generateBills(req: Request, res: Response) {
 
 export async function getBillById(req: Request, res: Response) {
   const { id } = req.params;
-  const existing = await prisma.maintenanceBill.findUnique({ where: { id }, select: { wingId: true } });
-  if (existing) await syncWingOverdueBills(existing.wingId);
+  const billScope =
+    req.user.role === 'RESIDENT'
+      ? { id, wingId: req.user.wing_id, flatId: req.user.flat_id ?? undefined }
+      : { id, wingId: req.user.wing_id };
 
-  const raw = await prisma.maintenanceBill.findUnique({
-    where: { id },
+  const existing = await prisma.maintenanceBill.findFirst({ where: billScope, select: { wingId: true } });
+  if (!existing) return notFound(res, 'Bill not found');
+  await syncWingOverdueBills(existing.wingId);
+
+  const raw = await prisma.maintenanceBill.findFirst({
+    where: billScope,
     include: {
       flat: {
         select: {

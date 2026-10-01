@@ -62,7 +62,7 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
     // to, so we need the user record before we can check the code.
     console.log('[verifyOtp] Finding user with phone:', cleanPhone);
     const users = await prisma.user.findMany({
-      where: { phone: cleanPhone },
+      where: { phone: cleanPhone, isActive: true },
     });
 
     console.log('[verifyOtp] Users found:', users.length);
@@ -88,9 +88,11 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
     // attached to a society) fall back to a fixed internal code — they're
     // few, internal, and not something we hand out to societies.
     let isValid = false;
+    let societyName: string | null = null;
     if (user.societyId) {
       const society = await prisma.society.findUnique({ where: { id: user.societyId } });
       isValid = !!society?.demoOtpCode && cleanOtp === society.demoOtpCode;
+      societyName = society?.name ?? null;
     } else {
       isValid = await verifyOTP(cleanPhone, cleanOtp);
     }
@@ -126,6 +128,7 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
           phone: user.phone,
           role: user.role,
           societyId: user.societyId,
+          societyName,
           wingId: user.wingId,
           flatId: user.flatId,
           isPrimary: user.isPrimary,

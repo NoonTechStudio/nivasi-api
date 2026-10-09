@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound, forbidden } from '../utils/response';
+import { notifyWingAdmins, residentLabel } from '../services/notification.service';
 
 const RELATIONS = ['SPOUSE', 'CHILD', 'PARENT', 'SIBLING', 'OTHER'] as const;
 
@@ -53,6 +54,15 @@ export async function addFamilyMember(req: Request, res: Response) {
       flatId,
     } as any,
   });
+  residentLabel(req.user.user_id).then((who) =>
+    notifyWingAdmins({
+      wingId,
+      title: 'Family member added',
+      body: `${who} added ${parsed.data.name} (${parsed.data.relation}).`,
+      type: 'FAMILY_ADDED',
+      relatedId: member.id,
+    }),
+  );
   return created(res, member, 'Family member added — they can log in with their own phone number');
 }
 
@@ -67,5 +77,14 @@ export async function removeFamilyMember(req: Request, res: Response) {
   if (member.isPrimary) return badRequest(res, 'Cannot remove the head of family');
 
   await prisma.user.update({ where: { id }, data: { isActive: false } });
+  residentLabel(req.user.user_id).then((who) =>
+    notifyWingAdmins({
+      wingId: req.user.wing_id,
+      title: 'Family member removed',
+      body: `${who} removed ${member.name}.`,
+      type: 'FAMILY_REMOVED',
+      relatedId: member.id,
+    }),
+  );
   return ok(res, null, 'Family member removed');
 }

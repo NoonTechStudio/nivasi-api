@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound, forbidden } from '../utils/response';
-import { notifyUser } from '../services/notification.service';
+import { notifyUser, notifyWingAdmins, residentLabel } from '../services/notification.service';
 
 function toMinutes(t: string) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
 function toTime(mins: number) { return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`; }
@@ -158,6 +158,15 @@ export async function createBooking(req: Request, res: Response) {
         status: amenity.requiresApproval ? 'PENDING' : 'CONFIRMED',
       },
     });
+    residentLabel(req.user.user_id).then((who) =>
+      notifyWingAdmins({
+        wingId: req.user.wing_id,
+        title: amenity.requiresApproval ? `Booking request: ${amenity.name}` : `New booking: ${amenity.name}`,
+        body: `${who} · ${parsed.data.date} at ${slot.start}${amenity.requiresApproval ? ' · awaiting your approval' : ''}`,
+        type: amenity.requiresApproval ? 'BOOKING_REQUESTED' : 'BOOKING_CREATED',
+        relatedId: booking.id,
+      }),
+    );
     return created(res, booking, amenity.requiresApproval ? 'Booking requested — awaiting approval' : 'Booking confirmed');
   } catch (err: any) {
     if (err.code === 'P2002') return badRequest(res, 'You already have a booking for this slot');

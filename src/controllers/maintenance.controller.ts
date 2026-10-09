@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound } from '../utils/response';
 import { uploadPrivateBuffer, getSignedDownloadUrl } from '../services/upload.service';
+import { notifyWingAdmins, residentLabel } from '../services/notification.service';
 
 const generateBillsSchema = z.object({
   amount: z.number().positive(),
@@ -274,6 +275,15 @@ export async function claimUpiPayment(req: Request, res: Response) {
     data: { status: 'PENDING_VERIFICATION', paymentMode: 'UPI', ...proofFields },
     include: { flat: { select: { number: true, floor: true } } },
   });
+  residentLabel(req.user.user_id).then((who) =>
+    notifyWingAdmins({
+      wingId: updated.wingId,
+      title: 'Payment awaiting verification',
+      body: `${who} paid ₹${updated.amount} by UPI${req.file ? ' and attached a screenshot' : ''}. Please verify.`,
+      type: 'PAYMENT_CLAIMED',
+      relatedId: updated.id,
+    }),
+  );
   return ok(res, updated, 'Payment claimed. Awaiting secretary verification.');
 }
 

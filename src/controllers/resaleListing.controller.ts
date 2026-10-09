@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound, forbidden } from '../utils/response';
 import { uploadPublicBuffer, deleteImage } from '../services/upload.service';
-import { notifyUser } from '../services/notification.service';
+import { notifyUser, notifyWingAdmins, residentLabel } from '../services/notification.service';
 
 const MAX_PHOTOS = 5;
 
@@ -119,6 +119,16 @@ export async function createListing(req: Request, res: Response) {
       // Listing still gets created without photos rather than failing the whole submission.
     }
   }
+
+  residentLabel(userId).then((who) =>
+    notifyWingAdmins({
+      wingId,
+      title: 'New listing awaiting approval',
+      body: `${who} submitted a ${String(parsed.data.listing_type).toLowerCase()} listing.`,
+      type: 'LISTING_SUBMITTED',
+      relatedId: listing.id,
+    }),
+  );
 
   const full = await prisma.resaleListing.findUnique({ where: { id: listing.id }, include: listingInclude });
   return created(res, full, 'Listing submitted for approval');

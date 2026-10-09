@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound, forbidden } from '../utils/response';
+import { notifyWingAdmins, residentLabel } from '../services/notification.service';
 
 const ROLES = ['MAID', 'COOK', 'DRIVER', 'NANNY', 'WATCHMAN', 'OTHER'] as const;
 
@@ -60,6 +61,15 @@ export async function addDomesticHelp(req: Request, res: Response) {
   const staff = await prisma.domesticHelp.create({
     data: { ...parsed.data, flatId, wingId } as any,
   });
+  residentLabel(req.user.user_id).then((who) =>
+    notifyWingAdmins({
+      wingId,
+      title: 'Domestic help registered',
+      body: `${who} added a household staff member.`,
+      type: 'DOMESTIC_HELP_ADDED',
+      relatedId: (staff as any).id,
+    }),
+  );
   return created(res, staff, 'Added to your household staff');
 }
 

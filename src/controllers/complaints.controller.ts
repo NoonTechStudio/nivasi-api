@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound } from '../utils/response';
 import { uploadPublicBuffer } from '../services/upload.service';
-import { notifyUser } from '../services/notification.service';
+import { notifyUser, notifyWingAdmins, residentLabel } from '../services/notification.service';
 
 const raiseComplaintSchema = z.object({
   category: z.enum(['PLUMBING', 'ELECTRICAL', 'LIFT', 'CLEANING', 'SECURITY', 'LOST_FOUND', 'OTHER']),
@@ -55,6 +55,16 @@ export async function raiseComplaint(req: Request, res: Response) {
       photoUrl,
     },
   });
+  // Tell the Secretary — fire and forget so a notification problem never fails the complaint.
+  residentLabel(req.user.user_id).then((who) =>
+    notifyWingAdmins({
+      wingId: req.user.wing_id,
+      title: `New complaint: ${parsed.data.category.replace(/_/g, ' ').toLowerCase()}`,
+      body: `${who} · ${parsed.data.location}`,
+      type: 'COMPLAINT_RAISED',
+      relatedId: complaint.id,
+    }),
+  );
   return created(res, complaint, 'Complaint raised');
 }
 

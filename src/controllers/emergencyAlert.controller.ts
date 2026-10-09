@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound } from '../utils/response';
-import { notifyUser } from '../services/notification.service';
+import { notifyUser, notifyWingAdmins, residentLabel } from '../services/notification.service';
 
 // Resident raises the alert. Returns the on-duty guard's phone (falling back
 // to the secretary's) so the app can auto-dial immediately — no push
@@ -25,6 +25,16 @@ export async function raiseAlert(req: Request, res: Response) {
       select: { name: true, phone: true },
     }),
   ]);
+
+  residentLabel(req.user.user_id).then((who) =>
+    notifyWingAdmins({
+      wingId,
+      title: 'EMERGENCY alert raised',
+      body: `${who} has raised an emergency alert. Please respond immediately.`,
+      type: 'EMERGENCY_ALERT',
+      relatedId: alert.id,
+    }),
+  );
 
   const contact = guard ?? secretary;
   return created(res, {

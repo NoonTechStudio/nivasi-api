@@ -59,6 +59,31 @@ export async function notifyWingAdmins(params: {
   }
 }
 
+// Notifies a specific list of users at once (used for notices addressed to a
+// whole wing, a floor or a flat).
+export async function notifyUsers(params: {
+  userIds: string[];
+  title: string;
+  body?: string;
+  type: string;
+  relatedId?: string;
+}) {
+  try {
+    if (!params.userIds.length) return;
+    await prisma.notification.createMany({
+      data: params.userIds.map((userId) => ({
+        userId,
+        title: params.title,
+        body: params.body,
+        type: params.type,
+        relatedId: params.relatedId,
+      })),
+    });
+  } catch (err) {
+    console.error('[notifyUsers] Failed to create notifications:', err);
+  }
+}
+
 // "Ramesh Shah (Flat A-101)" — short label used in Secretary notifications.
 export async function residentLabel(userId: string): Promise<string> {
   try {

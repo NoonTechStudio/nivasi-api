@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/db';
 import { ok, created, badRequest, notFound, forbidden } from '../utils/response';
+import { notifyUsers } from '../services/notification.service';
 
 const createNoticeSchema = z.object({
   title: z.string().min(1).max(200),
@@ -78,7 +79,34 @@ export async function createNotice(req: Request, res: Response) {
       photoUrl: parsed.data.photo_url,
     },
   });
+  notifyResidentsOfNotice(notice, req.user.user_id);
   return created(res, notice, 'Notice created');
+}
+
+// Puts the notice in the bell of everyone it is addressed to (whole wing, one
+// floor or one flat), so residents don't have to open the Notices tab to find
+// out. Runs in the background and never blocks or fails the notice itself.
+async function notifyResidentsOfNotice(
+  notice: { id: string; wingId: string; title: string; body: string | null; category: string; audience: string; targetFlatId: string | null; targetFloor: number | null },
+  authorId: string,
+) {
+  try {
+    const where: any = { wingId: notice.wingId, role: 'RESIDENT', isActive: true, id: { not: authorId } };
+    if (notice.audience === 'FLAT' && notice.targetFlatId) where.flatId = notice.targetFlatId;
+    if (notice.audience === 'FLOOR' && notice.targetFloor !== null) where.flat = { floor: notice.targetFloor };
+
+    const recipients = await prisma.user.findMany({ where, select: { id: true } });
+    const preview = notice.body ? notice.body.trim().slice(0, 120) : '';
+    await notifyUsers({
+      userIds: recipients.map((r) => r.id),
+      title: `New notice: ${notice.title}`,
+      body: preview || `${notice.category.charAt(0)}${notice.category.slice(1).toLowerCase()} notice from your Secretary`,
+      type: 'NOTICE_POSTED',
+      relatedId: notice.id,
+    });
+  } catch (err) {
+    console.error('[notifyResidentsOfNotice] failed:', err);
+  }
 }
 
 export async function updateNotice(req: Request, res: Response) {
@@ -116,6 +144,13 @@ export async function deleteNotice(req: Request, res: Response) {
   if (!notice) return notFound(res, 'Notice not found');
 
   await prisma.notice.delete({ where: { id: req.params.id } });
+  // Taking a notice down also clears it from residents' notification bells,
+  // so nobody is left with an alert that points to something that is gone.
+  try {
+    await prisma.notification.deleteMany({ where: { type: 'NOTICE_POSTED', relatedId: req.params.id } });
+  } catch (err) {
+    console.error('[deleteNotice] could not clear notifications:', err);
+  }
   return ok(res, null, 'Notice deleted');
 }
 

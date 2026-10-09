@@ -144,6 +144,8 @@ model User {
   amenityBookings AmenityBooking[]
   familyRelation String?
   notifications  Notification[]
+  // Id of the most recent login; older tokens are rejected (one device per person).
+  sessionId      String?
 }
 
 enum ResidentType {

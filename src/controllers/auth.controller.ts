@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import { z } from 'zod';
+import { invalidateAuthCache } from '../middleware/auth.middleware';
 import { prisma } from '../config/db';
 import { sendOTP, verifyOTP } from '../services/otp.service';
 import { signToken, verifyToken } from '../utils/jwt';
@@ -18,8 +20,6 @@ export async function handleSendOtp(req: Request, res: Response) {
   try {
     const { phone } = req.body;
     const cleanPhone = String(phone || '').trim().replace(/[^0-9]/g, '');
-
-    console.log('[sendOtp] Phone:', cleanPhone);
 
     if (!cleanPhone || cleanPhone.length < 10) {
       return res.status(400).json({ success: false, message: 'Valid phone number required' });
@@ -45,13 +45,9 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
   }, 15000);
 
   try {
-    console.log('[verifyOtp] Body received:', JSON.stringify(req.body));
-
     const { phone, otp } = req.body;
     const cleanPhone = String(phone || '').trim().replace(/[^0-9]/g, '');
     const cleanOtp = String(otp || '').trim();
-
-    console.log('[verifyOtp] Clean phone:', cleanPhone, 'Clean OTP:', cleanOtp);
 
     if (!cleanPhone || !cleanOtp) {
       clearTimeout(timeout);
@@ -60,12 +56,9 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
 
     // Find user first — the valid OTP depends on which society they belong
     // to, so we need the user record before we can check the code.
-    console.log('[verifyOtp] Finding user with phone:', cleanPhone);
     const users = await prisma.user.findMany({
       where: { phone: cleanPhone, isActive: true },
     });
-
-    console.log('[verifyOtp] Users found:', users.length);
 
     if (!users.length) {
       clearTimeout(timeout);
@@ -81,8 +74,6 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
       (a, b) => roleOrder.indexOf(a.role) - roleOrder.indexOf(b.role)
     )[0];
 
-    console.log('[verifyOtp] Logging in as:', user.role, user.phone);
-
     // Each society has its own login code, shared by its residents and
     // secretary. Platform-level accounts (SUPER_ADMIN, or anyone not yet
     // attached to a society) fall back to a fixed internal code — they're
@@ -96,7 +87,6 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
     } else {
       isValid = await verifyOTP(cleanPhone, cleanOtp);
     }
-    console.log('[verifyOtp] OTP valid:', isValid);
 
     if (!isValid) {
       clearTimeout(timeout);
@@ -106,7 +96,24 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
       });
     }
 
-    // Generate JWT using signToken so the payload matches JwtPayload (snake_case)
+    // One active login per person: every successful login gets a fresh session
+    // id. Any token carrying an older id is rejected by `authenticate`, which
+    // signs the previous device out.
+    //
+    // Exception: admins signing in on the Command Centre website (it sends a
+    // device_id) get a separate "web" session, so using the website never
+    // signs the Secretary out of the mobile app, or the other way round.
+    const isWebAdminLogin =
+      !!req.body?.device_id && (user.role === 'SUPER_ADMIN' || user.role === 'WING_ADMIN');
+    let sessionId = 'web';
+    if (!isWebAdminLogin) {
+      sessionId = randomUUID();
+      await prisma.user.update({ where: { id: user.id }, data: { sessionId } });
+      invalidateAuthCache(user.id);
+    }
+
+    // Generate JWT using signToken so the payload matches JwtPayload (snake_case).
+    // name/society_name ride along so the app still has them after a restart.
     const token = signToken({
       user_id: user.id,
       role: user.role,
@@ -114,6 +121,9 @@ export const handleVerifyOtp = async (req: Request, res: Response) => {
       wing_id: user.wingId ?? '',
       flat_id: user.flatId ?? null,
       is_primary: user.isPrimary,
+      name: user.name,
+      society_name: societyName ?? undefined,
+      sid: sessionId,
     });
 
     clearTimeout(timeout);
@@ -204,6 +214,8 @@ export async function handleRefresh(req: Request, res: Response) {
     wing_id: user.wingId ?? '',
     flat_id: user.flatId,
     is_primary: user.isPrimary,
+    name: user.name,
+    sid: user.sessionId ?? undefined,
   });
 
   return ok(res, { token }, 'Token refreshed');

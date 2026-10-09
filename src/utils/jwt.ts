@@ -8,6 +8,10 @@ export interface JwtPayload {
   wing_id: string;
   flat_id: string | null;
   is_primary?: boolean;
+  name?: string;
+  society_name?: string;
+  // Login session id — only the most recent login for a user is accepted.
+  sid?: string;
 }
 
 export function signToken(payload: JwtPayload): string {

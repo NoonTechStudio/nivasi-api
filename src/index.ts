@@ -38,6 +38,10 @@ process.on('unhandledRejection', (reason) => {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Railway sits behind a proxy; without this every client looks like the same
+// IP and the login rate limiter would lock everyone out together.
+app.set('trust proxy', 1);
+
 console.log('All env vars:', {
   PORT: process.env.PORT,
   NODE_ENV: process.env.NODE_ENV,

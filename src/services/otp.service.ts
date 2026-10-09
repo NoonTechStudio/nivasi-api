@@ -1,18 +1,25 @@
 import redis from '../config/redis';
+import { env } from '../config/env';
 
-const DEMO_OTP = '403090';
+// Legacy built-in code, used ONLY when PLATFORM_OTP is not set in the
+// environment. Set PLATFORM_OTP in Railway, then this fallback can be deleted.
+const LEGACY_PLATFORM_OTP = '403090';
+
+function platformOtp(): string {
+  if (env.PLATFORM_OTP) return env.PLATFORM_OTP;
+  console.warn('[OTP] PLATFORM_OTP is not set — using legacy built-in code. Set it in the environment.');
+  return LEGACY_PLATFORM_OTP;
+}
 
 export const sendOTP = async (phone: string): Promise<boolean> => {
   try {
-    await redis.setex(`otp:${phone}`, 600, DEMO_OTP);
-    console.log(`[OTP] Demo OTP set for ${phone}: ${DEMO_OTP}`);
-  } catch (err) {
-    console.log('[OTP] Redis warning:', err);
+    await redis.setex(`otp:${phone}`, 600, platformOtp());
+  } catch {
+    // Redis is optional here; verification does not depend on it.
   }
   return true;
 };
 
-export const verifyOTP = async (phone: string, otp: string): Promise<boolean> => {
-  console.log(`[OTP] Verifying phone: ${phone}, received: ${otp}, expected: ${DEMO_OTP}`);
-  return otp === DEMO_OTP;
+export const verifyOTP = async (_phone: string, otp: string): Promise<boolean> => {
+  return otp === platformOtp();
 };

@@ -11,13 +11,17 @@ declare global {
   }
 }
 
-// Caches recent isActive lookups briefly so we're not hitting the DB on
-// every single request, while still closing access within seconds of a
-// resident/family member being deactivated (access tokens live for 30
-// days, so without this a removed family member would keep working
-// until their token happened to expire).
-const activeCache = new Map<string, { active: boolean; checkedAt: number }>();
+// Caches recent account lookups briefly so we're not hitting the DB on every
+// single request, while still closing access within seconds of a person being
+// deactivated or logging in on another device (access tokens live 30 days, so
+// without this a removed family member would keep working until expiry).
+type CacheEntry = { active: boolean; sessionId: string | null; checkedAt: number };
+const authCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 30_000;
+
+export function invalidateAuthCache(userId: string) {
+  authCache.delete(userId);
+}
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -34,21 +38,31 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   }
 
   try {
-    const cached = activeCache.get(payload.user_id);
-    let isActive: boolean;
-    if (cached && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
-      isActive = cached.active;
-    } else {
-      const user = await prisma.user.findUnique({ where: { id: payload.user_id }, select: { isActive: true } });
-      isActive = !!user?.isActive;
-      activeCache.set(payload.user_id, { active: isActive, checkedAt: Date.now() });
+    let entry = authCache.get(payload.user_id);
+    if (!entry || Date.now() - entry.checkedAt >= CACHE_TTL_MS) {
+      const user = await prisma.user.findUnique({
+        where: { id: payload.user_id },
+        select: { isActive: true, sessionId: true },
+      });
+      entry = { active: !!user?.isActive, sessionId: user?.sessionId ?? null, checkedAt: Date.now() };
+      authCache.set(payload.user_id, entry);
     }
-    if (!isActive) return unauthorized(res, 'Your access has been revoked. Please contact your Wing Secretary.');
+    if (!entry.active) {
+      return unauthorized(res, 'Your access has been revoked. Please contact your Wing Secretary.');
+    }
+    // Accounts that have logged in since one-device login was introduced carry
+    // a session id; a token with a different (or missing) id belongs to an
+    // older login on another device. Accounts with no session id yet are
+    // accepted so nobody is signed out by the rollout itself.
+    // 'web' tokens are Command Centre admin sessions, which are not limited to one device.
+    if (entry.sessionId && payload.sid !== 'web' && payload.sid !== entry.sessionId) {
+      return unauthorized(res, 'You were signed out because this account was logged in on another device.');
+    }
   } catch (err) {
     // If the DB check itself fails (transient outage), don't lock everyone
     // out — fall back to trusting the token rather than cascading an
     // unrelated failure into every authenticated request.
-    console.error('[authenticate] isActive check failed:', err);
+    console.error('[authenticate] account check failed:', err);
   }
 
   req.user = payload;

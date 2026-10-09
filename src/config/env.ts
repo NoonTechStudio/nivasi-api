@@ -9,6 +9,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   JWT_SECRET: z.string(),
+  // Login code for platform-level accounts (Super Admin, anyone without a society).
+  // Set this in Railway. If unset, the legacy built-in code is used and a warning is logged.
+  PLATFORM_OTP: z.string().default(''),
   JWT_EXPIRES_IN: z.string().default('30d'),
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('90d'),
   // Third-party services — optional until configured

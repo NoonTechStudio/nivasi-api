@@ -2,6 +2,8 @@ import { Router } from 'express';
 import {
   listComplaints,
   raiseComplaint,
+  updateComplaint,
+  deleteComplaint,
   assignComplaint,
   updateComplaintStatus,
 } from '../controllers/complaints.controller';
@@ -15,6 +17,8 @@ router.use(authenticate, wingGuard);
 
 router.get('/', listComplaints);
 router.post('/', requireRole('RESIDENT'), handleSingleUpload('photo'), raiseComplaint);
+router.put('/:id', requireRole('RESIDENT'), handleSingleUpload('photo'), updateComplaint);
+router.delete('/:id', requireRole('RESIDENT'), deleteComplaint);
 router.put('/:id/assign', requireRole('WING_ADMIN'), assignComplaint);
 router.put('/:id/status', requireRole('WING_ADMIN'), updateComplaintStatus);
 

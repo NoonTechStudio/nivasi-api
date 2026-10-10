@@ -68,6 +68,83 @@ export async function raiseComplaint(req: Request, res: Response) {
   return created(res, complaint, 'Complaint raised');
 }
 
+const NOT_EDITABLE_MESSAGE =
+  'This complaint is already being handled, so it can no longer be changed. Please contact your Wing Secretary.';
+
+// A resident can correct their own complaint only while it is still OPEN, i.e.
+// before the Secretary has picked it up.
+export async function updateComplaint(req: Request, res: Response) {
+  const parsed = raiseComplaintSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
+
+  const complaint = await prisma.complaint.findFirst({
+    where: { id: req.params.id, userId: req.user.user_id, wingId: req.user.wing_id },
+  });
+  if (!complaint) return notFound(res, 'Complaint not found');
+  if (complaint.status !== 'OPEN') return badRequest(res, NOT_EDITABLE_MESSAGE);
+
+  let photoUrl: string | null | undefined;
+  const file = req.file as Express.Multer.File | undefined;
+  if (file) {
+    try {
+      const uploaded = await uploadPublicBuffer(file.buffer, 'complaints');
+      photoUrl = uploaded.secureUrl;
+    } catch (err: any) {
+      console.error('[updateComplaint] Photo upload failed:', err.message);
+    }
+  } else if (String(req.body?.remove_photo) === 'true') {
+    photoUrl = null;
+  }
+
+  const updated = await prisma.complaint.update({
+    where: { id: complaint.id },
+    data: {
+      category: parsed.data.category,
+      location: parsed.data.location,
+      description: parsed.data.description?.trim() || null,
+      ...(photoUrl !== undefined ? { photoUrl } : {}),
+    },
+  });
+
+  residentLabel(req.user.user_id).then((who) =>
+    notifyWingAdmins({
+      wingId: req.user.wing_id,
+      title: 'Complaint updated by resident',
+      body: `${who} edited their ${parsed.data.category.replace(/_/g, ' ').toLowerCase()} complaint · ${parsed.data.location}`,
+      type: 'COMPLAINT_RAISED',
+      relatedId: complaint.id,
+    }),
+  );
+  return ok(res, updated, 'Complaint updated');
+}
+
+// A resident can withdraw their own complaint only while it is still OPEN.
+export async function deleteComplaint(req: Request, res: Response) {
+  const complaint = await prisma.complaint.findFirst({
+    where: { id: req.params.id, userId: req.user.user_id, wingId: req.user.wing_id },
+  });
+  if (!complaint) return notFound(res, 'Complaint not found');
+  if (complaint.status !== 'OPEN') return badRequest(res, NOT_EDITABLE_MESSAGE);
+
+  await prisma.complaint.delete({ where: { id: complaint.id } });
+
+  // Remove the Secretary's earlier alerts about it so nothing points to a deleted complaint.
+  try {
+    await prisma.notification.deleteMany({ where: { type: 'COMPLAINT_RAISED', relatedId: complaint.id } });
+  } catch (err) {
+    console.error('[deleteComplaint] could not clear notifications:', err);
+  }
+  residentLabel(req.user.user_id).then((who) =>
+    notifyWingAdmins({
+      wingId: req.user.wing_id,
+      title: 'Complaint withdrawn',
+      body: `${who} withdrew their ${complaint.category.replace(/_/g, ' ').toLowerCase()} complaint · ${complaint.location}`,
+      type: 'COMPLAINT_WITHDRAWN',
+    }),
+  );
+  return ok(res, null, 'Complaint deleted');
+}
+
 export async function assignComplaint(req: Request, res: Response) {
   const parsed = assignSchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed.error.errors[0].message);
